@@ -1,0 +1,13 @@
+{
+  "name": "PF購買単価",
+  "short_name": "PF購買単価",
+  "description": "購入品単価の登録・改訂履歴・承認ワークフロー・mcframe連携",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
