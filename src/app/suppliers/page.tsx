@@ -5,7 +5,7 @@ import { listSuppliers } from "@/lib/db";
 import { deleteSupplierAction, upsertSupplierAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
-import BuyerAssign from "@/components/BuyerAssign";
+import ContactsAssign from "@/components/ContactsAssign";
 
 export const dynamic = "force-dynamic";
 
@@ -100,7 +100,9 @@ export default async function SuppliersPage({
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
               <th className="px-4 py-2.5 font-medium">発注先CD</th>
               <th className="px-2 py-2.5 font-medium">発注先名</th>
-              <th className="px-2 py-2.5 font-medium">担当バイヤー</th>
+              <th className="px-2 py-2.5 font-medium">
+                担当バイヤー（副）/ チェイサー
+              </th>
               <th className="px-2 py-2.5 font-medium"></th>
             </tr>
           </thead>
@@ -111,13 +113,20 @@ export default async function SuppliersPage({
                 <td className="px-2 py-2">{s.name || <span className="text-[#a0a0a0]">（名称未設定）</span>}</td>
                 <td className="px-2 py-2">
                   {isAdmin ? (
-                    <BuyerAssign
+                    <ContactsAssign
                       supplierId={s.id}
-                      buyerLoginId={s.buyerLoginId}
                       supplierLabel={`${s.code} ${s.name}`}
+                      buyerLoginId={s.buyerLoginId}
+                      buyerSubLoginId={s.buyerSubLoginId ?? null}
+                      chaserLoginId={s.chaserLoginId ?? null}
                     />
                   ) : (
-                    <span className="font-mono text-xs">{s.buyerLoginId ?? "—"}</span>
+                    <span className="font-mono text-xs">
+                      {s.buyerLoginId ?? "—"}
+                      {s.buyerSubLoginId && <span className="text-[#707070]">（{s.buyerSubLoginId}）</span>}
+                      <span className="mx-1 text-[#d5d5d5]">/</span>
+                      {s.chaserLoginId ?? "—"}
+                    </span>
                   )}
                 </td>
                 <td className="px-2 py-2 text-right">

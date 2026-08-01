@@ -9,6 +9,7 @@ import {
   History,
   Package,
   Building2,
+  Users,
   Upload,
   Download,
   DatabaseZap,
@@ -27,6 +28,7 @@ const NAV: NavItem[] = [
   { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
   // 一般（バイヤー）は自分の担当発注先のみ閲覧できる
   { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
+  { href: "/employees", label: "社員マスタ", icon: Users, adminOnly: true },
   { href: "/import", label: "一括取込", icon: Upload, adminOnly: true },
   { href: "/export", label: "MC取込出力", icon: Download, adminOnly: true },
   // 運用開始時の1回限りの作業（日常運用では使わない）

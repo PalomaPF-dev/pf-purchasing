@@ -1,5 +1,6 @@
 import { getSql } from "./neon";
 import { ensureSchema } from "./schema";
+import { createInvitedUser } from "./authDb";
 import type {
   ApprovalStage,
   Item,
@@ -195,7 +196,8 @@ export async function listRequests(
       AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
         SELECT 1 FROM price_request_lines l2
         JOIN suppliers sp ON sp.company_id = l2.company_id AND sp.code = l2.supplier_cd
-        WHERE l2.request_id = r.id AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}
+        WHERE l2.request_id = r.id
+          AND ${opts.buyerLoginId ?? null} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)
       ))
       AND (${q}::text IS NULL OR EXISTS (
         SELECT 1 FROM price_request_lines l
@@ -636,7 +638,7 @@ export async function listPrices(
     AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
       SELECT 1 FROM suppliers sp
       WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
-        AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}))
+        AND ${opts.buyerLoginId ?? null} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
     AND (NOT ${activeOnly} OR (start_date <= CURRENT_DATE AND (end_date IS NULL OR end_date >= CURRENT_DATE)))`;
   const [rows, cnt] = await Promise.all([
     sql`
@@ -664,7 +666,7 @@ export async function priceHistoryFor(
       AND (${buyerLoginId}::text IS NULL OR EXISTS (
         SELECT 1 FROM suppliers sp
         WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
-          AND sp.buyer_login_id = ${buyerLoginId}))
+          AND ${buyerLoginId} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
     ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'), start_date DESC
     LIMIT 1000`;
   return (rows as any[]).map(mapHistory);
@@ -834,13 +836,13 @@ export async function listSuppliers(
       SELECT * FROM suppliers
       WHERE company_id = ${companyId}
         AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
-        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})
+        AND (${buyer}::text IS NULL OR ${buyer} IN (buyer_login_id, buyer_sub_login_id, chaser_login_id))
       ORDER BY code LIMIT ${limit} OFFSET ${offset}`,
     sql`
       SELECT COUNT(*)::int AS n FROM suppliers
       WHERE company_id = ${companyId}
         AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
-        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})`,
+        AND (${buyer}::text IS NULL OR ${buyer} IN (buyer_login_id, buyer_sub_login_id, chaser_login_id))`,
   ]);
   return {
     rows: (rows as any[]).map((r) => ({
@@ -850,6 +852,8 @@ export async function listSuppliers(
       notes: r.notes ?? null,
       active: Boolean(r.active),
       buyerLoginId: r.buyer_login_id ?? null,
+      buyerSubLoginId: r.buyer_sub_login_id ?? null,
+      chaserLoginId: r.chaser_login_id ?? null,
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };
@@ -857,20 +861,70 @@ export async function listSuppliers(
 
 export async function upsertSupplier(
   companyId: string,
-  s: { code: string; name: string; notes?: string | null; buyerLoginId?: string | null }
+  s: {
+    code: string;
+    name: string;
+    notes?: string | null;
+    buyerLoginId?: string | null;
+    buyerSubLoginId?: string | null;
+    chaserLoginId?: string | null;
+  }
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   const buyer = (s.buyerLoginId ?? "").trim() || null;
+  const buyerSub = (s.buyerSubLoginId ?? "").trim() || null;
+  const chaser = (s.chaserLoginId ?? "").trim() || null;
   await sql`
-    INSERT INTO suppliers (company_id, code, name, notes, buyer_login_id)
-    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null}, ${buyer})
+    INSERT INTO suppliers (company_id, code, name, notes, buyer_login_id, buyer_sub_login_id, chaser_login_id)
+    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null},
+            ${buyer}, ${buyerSub}, ${chaser})
     ON CONFLICT (company_id, code) DO UPDATE SET
       name = EXCLUDED.name,
       notes = COALESCE(EXCLUDED.notes, suppliers.notes),
       buyer_login_id = COALESCE(EXCLUDED.buyer_login_id, suppliers.buyer_login_id),
+      buyer_sub_login_id = COALESCE(EXCLUDED.buyer_sub_login_id, suppliers.buyer_sub_login_id),
+      chaser_login_id = COALESCE(EXCLUDED.chaser_login_id, suppliers.chaser_login_id),
       active = true,
       updated_at = NOW()`;
+}
+
+/** 取引先の担当窓口（企画グループ／管理グループ）を一括で設定する。 */
+export async function setSupplierContacts(
+  companyId: string,
+  rows: {
+    code: string;
+    name?: string | null;
+    buyerLoginId?: string | null;
+    buyerSubLoginId?: string | null;
+    chaserLoginId?: string | null;
+  }[]
+): Promise<{ updated: number; created: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  let updated = 0;
+  let created = 0;
+  for (const r of rows) {
+    const code = r.code.trim();
+    if (!code) continue;
+    const res = (await sql`
+      INSERT INTO suppliers (company_id, code, name, buyer_login_id, buyer_sub_login_id, chaser_login_id)
+      VALUES (${companyId}, ${code}, ${(r.name ?? "").trim()},
+              ${(r.buyerLoginId ?? "").trim() || null},
+              ${(r.buyerSubLoginId ?? "").trim() || null},
+              ${(r.chaserLoginId ?? "").trim() || null})
+      ON CONFLICT (company_id, code) DO UPDATE SET
+        name = COALESCE(NULLIF(EXCLUDED.name, ''), suppliers.name),
+        buyer_login_id = EXCLUDED.buyer_login_id,
+        buyer_sub_login_id = EXCLUDED.buyer_sub_login_id,
+        chaser_login_id = EXCLUDED.chaser_login_id,
+        active = true,
+        updated_at = NOW()
+      RETURNING (xmax = 0) AS inserted`) as any[];
+    if (res[0]?.inserted) created += 1;
+    else updated += 1;
+  }
+  return { updated, created };
 }
 
 /** 担当バイヤーの割当・解除（管理者操作）。null で未割当に戻す。 */
@@ -883,6 +937,23 @@ export async function setSupplierBuyer(
   const sql = getSql();
   await sql`
     UPDATE suppliers SET buyer_login_id = ${buyerLoginId}, updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${supplierId}`;
+}
+
+/** 1件の取引先の担当窓口（バイヤー主／副・チェイサー）を設定する。 */
+export async function setSupplierContactIds(
+  companyId: string,
+  supplierId: string,
+  c: { buyerLoginId: string | null; buyerSubLoginId: string | null; chaserLoginId: string | null }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    UPDATE suppliers SET
+      buyer_login_id = ${c.buyerLoginId},
+      buyer_sub_login_id = ${c.buyerSubLoginId},
+      chaser_login_id = ${c.chaserLoginId},
+      updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${supplierId}`;
 }
 
@@ -900,7 +971,8 @@ export async function canAccessSupplier(
   const sql = getSql();
   const rows = await sql`
     SELECT 1 FROM suppliers
-    WHERE company_id = ${companyId} AND code = ${supplierCd} AND buyer_login_id = ${buyerLoginId}
+    WHERE company_id = ${companyId} AND code = ${supplierCd}
+      AND ${buyerLoginId} IN (buyer_login_id, buyer_sub_login_id, chaser_login_id)
     LIMIT 1`;
   return (rows as any[]).length > 0;
 }
@@ -1003,7 +1075,8 @@ export async function searchActiveSuppliers(
     FROM suppliers s
     WHERE s.company_id = ${companyId} AND s.active
       AND (${pat}::text IS NULL OR s.code ILIKE ${pat} OR s.name ILIKE ${pat})
-      AND (${buyerLoginId}::text IS NULL OR s.buyer_login_id = ${buyerLoginId})
+      AND (${buyerLoginId}::text IS NULL
+           OR ${buyerLoginId} IN (s.buyer_login_id, s.buyer_sub_login_id, s.chaser_login_id))
     ORDER BY s.code
     LIMIT ${Math.min(limit, 50)}`;
   return (rows as any[]).map((r) => ({
@@ -1029,6 +1102,8 @@ export async function searchSuppliers(companyId: string, q: string, limit = 12):
     notes: r.notes ?? null,
     active: Boolean(r.active),
     buyerLoginId: r.buyer_login_id ?? null,
+    buyerSubLoginId: r.buyer_sub_login_id ?? null,
+    chaserLoginId: r.chaser_login_id ?? null,
   }));
 }
 
@@ -1249,4 +1324,292 @@ export async function markExported(companyId: string, lineIds: string[]): Promis
   await sql`
     UPDATE price_request_lines SET exported_at = NOW()
     WHERE company_id = ${companyId} AND id = ANY(${lineIds}::uuid[])`;
+}
+
+// ===== 社員マスタ（社員一覧） =====
+
+export interface Employee {
+  id: string;
+  loginId: string;
+  name: string;
+  /** 承認W/Fの段階。'mgr' | 'dept' | null（承認者でない） */
+  wfRole: "mgr" | "dept" | null;
+  role: "admin" | "member";
+  email: string | null;
+  active: boolean;
+  /** アプリのユーザーとして登録済みか */
+  userExists?: boolean;
+}
+
+/** 氏名の表記ゆれを吸収（全角スペース→半角・連続スペース圧縮）。名寄せに使う。 */
+export function normalizeName(v: string): string {
+  return v.replace(/[　\s]+/g, " ").trim();
+}
+
+/**
+ * 「町野 真一（髙橋 彩佳）」のような併記を主担当と副担当に分解する。
+ * 括弧が無ければ副担当は null。
+ */
+export function splitContactNames(v: string): { main: string; sub: string | null } {
+  const t = normalizeName(v);
+  const m = t.match(/^(.*?)[（(](.*?)[）)]\s*$/);
+  if (m) return { main: normalizeName(m[1]), sub: normalizeName(m[2]) || null };
+  return { main: t, sub: null };
+}
+
+export async function listEmployees(
+  companyId: string,
+  opts: { q?: string | null } = {}
+): Promise<Employee[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const q = opts.q ? `%${opts.q}%` : null;
+  const rows = await sql`
+    SELECT e.*, EXISTS (SELECT 1 FROM users u WHERE u.login_id = e.login_id) AS user_exists
+    FROM employees e
+    WHERE e.company_id = ${companyId}
+      AND (${q}::text IS NULL OR e.login_id ILIKE ${q} OR e.name ILIKE ${q})
+    ORDER BY e.login_id`;
+  return (rows as any[]).map((r) => ({
+    id: r.id,
+    loginId: r.login_id,
+    name: r.name ?? "",
+    wfRole: r.wf_role === "mgr" || r.wf_role === "dept" ? r.wf_role : null,
+    role: r.role === "admin" ? "admin" : "member",
+    email: r.email ?? null,
+    active: Boolean(r.active),
+    userExists: Boolean(r.user_exists),
+  }));
+}
+
+export async function upsertEmployee(
+  companyId: string,
+  e: {
+    loginId: string;
+    name: string;
+    wfRole?: "mgr" | "dept" | null;
+    role?: "admin" | "member";
+    email?: string | null;
+  }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO employees (company_id, login_id, name, wf_role, role, email)
+    VALUES (${companyId}, ${e.loginId.trim()}, ${normalizeName(e.name)},
+            ${e.wfRole ?? null}, ${e.role ?? "member"}, ${e.email ?? null})
+    ON CONFLICT (company_id, login_id) DO UPDATE SET
+      name = EXCLUDED.name,
+      wf_role = EXCLUDED.wf_role,
+      role = EXCLUDED.role,
+      email = COALESCE(EXCLUDED.email, employees.email),
+      active = true,
+      updated_at = NOW()`;
+}
+
+export async function deleteEmployee(companyId: string, id: string): Promise<void> {
+  const sql = getSql();
+  await sql`DELETE FROM employees WHERE company_id = ${companyId} AND id = ${id}`;
+}
+
+/** 氏名 → 社員番号の対応表（担当窓口の名寄せに使う） */
+export async function employeeNameMap(companyId: string): Promise<Map<string, string>> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT login_id, name FROM employees WHERE company_id = ${companyId}`;
+  const m = new Map<string, string>();
+  for (const r of rows as any[]) {
+    const n = normalizeName(r.name ?? "");
+    if (n) m.set(n, r.login_id);
+  }
+  return m;
+}
+
+/**
+ * 社員マスタからアプリのユーザーを登録・更新する。
+ * 既存ユーザーは氏名・権限を更新し、未登録の社員は招待状態（pending）で作成する。
+ * あわせて、承認W/F設定の承認者リストを社員マスタの「承認W/F」列で置き換える。
+ */
+export async function syncUsersFromEmployees(
+  companyId: string
+): Promise<{ created: number; updated: number; mgr: string[]; dept: string[] }> {
+  await ensureSchema();
+  const sql = getSql();
+  const emps = await listEmployees(companyId);
+  let created = 0;
+  let updated = 0;
+  for (const e of emps) {
+    if (!e.active || !e.loginId) continue;
+    const exists = await sql`SELECT id FROM users WHERE login_id = ${e.loginId} LIMIT 1`;
+    if ((exists as any[]).length > 0) {
+      await sql`
+        UPDATE users SET name = ${e.name || e.loginId}, role = ${e.role}
+        WHERE login_id = ${e.loginId}`;
+      updated++;
+    } else {
+      await createInvitedUser(companyId, e.loginId, e.name || e.loginId, e.role, e.email);
+      created++;
+    }
+  }
+  // 承認者リストを社員マスタに合わせる（W/F設定の手入力を上書き）
+  const mgr = emps.filter((e) => e.active && e.wfRole === "mgr").map((e) => e.loginId);
+  const dept = emps.filter((e) => e.active && e.wfRole === "dept").map((e) => e.loginId);
+  const wf = await getWfSettings(companyId);
+  await saveWfSettings(companyId, { ...wf, mgrApprovers: mgr, deptApprovers: dept });
+  return { created, updated, mgr, dept };
+}
+
+// ===== 申請の添付資料 =====
+
+export interface RequestFile {
+  id: string;
+  requestId: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  kind: string;
+  uploadedName: string | null;
+  createdAt: string;
+}
+
+function mapFile(r: any): RequestFile {
+  return {
+    id: r.id,
+    requestId: r.request_id,
+    fileName: r.file_name,
+    contentType: r.content_type ?? "application/octet-stream",
+    sizeBytes: Number(r.size_bytes ?? 0),
+    kind: r.kind ?? "quote",
+    uploadedName: r.uploaded_name ?? null,
+    createdAt: tsStr(r.created_at),
+  };
+}
+
+/** 申請に紐づく添付資料の一覧（本体データは含まない） */
+export async function listRequestFiles(
+  companyId: string,
+  requestId: string
+): Promise<RequestFile[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, request_id, file_name, content_type, size_bytes, kind, uploaded_name, created_at
+    FROM request_files
+    WHERE company_id = ${companyId} AND request_id = ${requestId}
+    ORDER BY created_at`;
+  return (rows as any[]).map(mapFile);
+}
+
+/** 単価履歴の1行に紐づく添付資料（その明細を含む申請の添付） */
+export async function filesForHistoryRow(
+  companyId: string,
+  requestLineId: string
+): Promise<RequestFile[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT f.id, f.request_id, f.file_name, f.content_type, f.size_bytes, f.kind,
+           f.uploaded_name, f.created_at
+    FROM request_files f
+    JOIN price_request_lines l ON l.request_id = f.request_id
+    WHERE f.company_id = ${companyId} AND l.id = ${requestLineId}
+    ORDER BY f.created_at`;
+  return (rows as any[]).map(mapFile);
+}
+
+/** 複数の履歴行ぶんの添付をまとめて取得（単価履歴の一覧表示用） */
+export async function filesForHistoryRows(
+  companyId: string,
+  requestLineIds: string[]
+): Promise<Map<string, RequestFile[]>> {
+  const ids = [...new Set(requestLineIds.filter(Boolean))];
+  const out = new Map<string, RequestFile[]>();
+  if (ids.length === 0) return out;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT l.id AS line_id, f.id, f.request_id, f.file_name, f.content_type, f.size_bytes,
+           f.kind, f.uploaded_name, f.created_at
+    FROM request_files f
+    JOIN price_request_lines l ON l.request_id = f.request_id
+    WHERE f.company_id = ${companyId} AND l.id = ANY(${ids}::uuid[])
+    ORDER BY f.created_at`;
+  for (const r of rows as any[]) {
+    const arr = out.get(r.line_id) ?? [];
+    arr.push(mapFile(r));
+    out.set(r.line_id, arr);
+  }
+  return out;
+}
+
+/** 申請に含まれる発注先CDの一覧（添付の閲覧権限チェック用） */
+export async function requestSupplierCodes(
+  companyId: string,
+  requestId: string
+): Promise<string[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT DISTINCT supplier_cd FROM price_request_lines
+    WHERE company_id = ${companyId} AND request_id = ${requestId} AND supplier_cd <> ''`;
+  return (rows as any[]).map((r) => r.supplier_cd as string);
+}
+
+/** 添付ファイルが属する申請ID（company スコープ内） */
+export async function requestIdOfFile(
+  companyId: string,
+  fileId: string
+): Promise<string | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT request_id FROM request_files
+    WHERE company_id = ${companyId} AND id = ${fileId} LIMIT 1`;
+  return (rows as any[])[0]?.request_id ?? null;
+}
+
+export async function addRequestFile(
+  companyId: string,
+  requestId: string,
+  file: {
+    fileName: string;
+    contentType: string;
+    data: Buffer;
+    kind?: string;
+    uploadedBy: string | null;
+    uploadedName: string | null;
+  }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`
+    INSERT INTO request_files (
+      company_id, request_id, file_name, content_type, size_bytes, kind, data, uploaded_by, uploaded_name)
+    VALUES (${companyId}, ${requestId}, ${file.fileName}, ${file.contentType},
+            ${file.data.length}, ${file.kind ?? "quote"}, ${file.data},
+            ${file.uploadedBy}, ${file.uploadedName})`;
+}
+
+/** 添付の本体を取得（ダウンロード用） */
+export async function getRequestFile(
+  companyId: string,
+  fileId: string
+): Promise<{ fileName: string; contentType: string; data: Buffer } | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT file_name, content_type, data FROM request_files
+    WHERE company_id = ${companyId} AND id = ${fileId} LIMIT 1`;
+  const r = (rows as any[])[0];
+  if (!r) return null;
+  return {
+    fileName: r.file_name,
+    contentType: r.content_type ?? "application/octet-stream",
+    data: Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data),
+  };
+}
+
+export async function deleteRequestFile(companyId: string, fileId: string): Promise<void> {
+  const sql = getSql();
+  await sql`DELETE FROM request_files WHERE company_id = ${companyId} AND id = ${fileId}`;
 }

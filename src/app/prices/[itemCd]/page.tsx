@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Paperclip } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { priceHistoryFor, requestLineDetail } from "@/lib/db";
+import { filesForHistoryRows, priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
 import type { PriceHistoryRow } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
@@ -68,6 +68,12 @@ export default async function PriceHistoryPage({
       })
   );
 
+  // 申請時に添付された見積書・資料（履歴からそのまま開ける）
+  const filesByLine = await filesForHistoryRows(
+    session.companyId,
+    rows.map((r) => r.requestLineId).filter((v): v is string => !!v)
+  );
+
   // 取引先×納入場所×納品先ごとにグループ化して時系列表示
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
@@ -121,6 +127,7 @@ export default async function PriceHistoryPage({
                         <th className="px-2 py-2 text-right font-medium">差額</th>
                         <th className="px-2 py-2 font-medium">単価差の要因（内訳）</th>
                         <th className="px-2 py-2 font-medium">備考（改訂理由）</th>
+                        <th className="px-2 py-2 font-medium">添付資料</th>
                         <th className="px-2 py-2 font-medium">出所</th>
                       </tr>
                     </thead>
@@ -158,6 +165,30 @@ export default async function PriceHistoryPage({
                               <BreakdownTags row={r} />
                             </td>
                             <td className="px-2 py-2 text-xs">{r.reason ?? "—"}</td>
+                            <td className="px-2 py-2 text-xs">
+                              {(() => {
+                                const fs = r.requestLineId ? filesByLine.get(r.requestLineId) : undefined;
+                                if (!fs || fs.length === 0) return <span className="text-[#c0c0c0]">—</span>;
+                                return (
+                                  <ul className="space-y-0.5">
+                                    {fs.map((f) => (
+                                      <li key={f.id}>
+                                        <a
+                                          href={`/api/request-files/${f.id}`}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex max-w-[14rem] items-center gap-1 text-[#e11d48] hover:underline"
+                                          title={f.fileName}
+                                        >
+                                          <Paperclip className="h-3 w-3 shrink-0" />
+                                          <span className="truncate">{f.fileName}</span>
+                                        </a>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                );
+                              })()}
+                            </td>
                             <td className="px-2 py-2 text-xs">
                               {reqId ? (
                                 <Link href={`/requests/${reqId}`} className="text-[#e11d48] hover:underline">

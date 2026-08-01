@@ -2,12 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { getRequest, getWfSettings } from "@/lib/db";
+import { getRequest, getWfSettings, listRequestFiles } from "@/lib/db";
 import { REQUEST_STATUS_LABEL } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ApprovalActions from "@/components/ApprovalActions";
 import { MessageForm, SubmitDeleteActions } from "@/components/RequestDetailActions";
+import RequestFiles from "@/components/RequestFiles";
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +20,10 @@ export default async function RequestDetailPage({
 }) {
   const session = await requireSession();
   const { id } = await params;
-  const [detail, wf] = await Promise.all([
+  const [detail, wf, files] = await Promise.all([
     getRequest(session.companyId, id),
     getWfSettings(session.companyId),
+    listRequestFiles(session.companyId, id),
   ]);
   if (!detail) notFound();
   const { request, lines, approvals, messages } = detail;
@@ -213,6 +215,11 @@ export default async function RequestDetailPage({
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* 添付資料（見積書など）。承認後は単価履歴からも同じファイルを開ける */}
+      <div className="mb-4">
+        <RequestFiles requestId={request.id} initialFiles={files} editable={editable} />
       </div>
 
       {/* 承認スレッド */}

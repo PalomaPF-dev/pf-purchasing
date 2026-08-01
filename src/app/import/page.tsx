@@ -4,7 +4,7 @@ import ImportForm from "@/components/ImportForm";
 
 export const dynamic = "force-dynamic";
 
-/** 一括取込（単価申請・品番マスタ・取引先マスタ） */
+/** 一括取込（単価申請・品番マスタ・取引先マスタ・担当窓口・社員マスタ） */
 export default async function ImportPage({
   searchParams,
 }: {
@@ -16,7 +16,7 @@ export default async function ImportPage({
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <PageHeader
         title="一括取込"
-        description="Excel/CSV から単価申請の明細やマスタを一括登録します。テンプレートのヘッダに合わせて作成してください。"
+        description="Excel/CSV から単価申請の明細やマスタを一括登録します。テンプレートのヘッダに合わせて作成してください（社員一覧・取引先の窓口一覧は、お使いのExcelをそのまま取り込めます）。"
       />
       <ImportForm initialTab={sp.tab} />
     </div>
