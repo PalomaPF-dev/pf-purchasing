@@ -7,7 +7,12 @@ import { REQUEST_STATUS_LABEL } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ApprovalActions from "@/components/ApprovalActions";
-import { MessageForm, SubmitDeleteActions } from "@/components/RequestDetailActions";
+import {
+  CancelApprovalAction,
+  MessageForm,
+  SubmitDeleteActions,
+  WithdrawAction,
+} from "@/components/RequestDetailActions";
 import RequestFiles from "@/components/RequestFiles";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +37,11 @@ export default async function RequestDetailPage({
   const editable = request.status === "draft" || request.status === "rejected";
   const approvable =
     isAdmin && (request.status === "pending" || request.status === "mgr_approved");
+  // 提出後の取り下げ（下書きに戻して修正・削除）は申請者本人と管理者
+  const submitted = request.status === "pending" || request.status === "mgr_approved";
+  const withdrawable =
+    submitted && (isAdmin || (!!request.applicantLoginId && request.applicantLoginId === session.loginId));
+  const exportedCount = lines.filter((l) => l.exportedAt).length;
   const stage = request.status === "pending" ? ("mgr" as const) : ("dept" as const);
 
   const statusColor =
@@ -129,6 +139,17 @@ export default async function RequestDetailPage({
       {editable && (
         <div className="mb-4">
           <SubmitDeleteActions requestId={request.id} />
+        </div>
+      )}
+      {/* 提出後の修正・取り消し */}
+      {withdrawable && (
+        <div className="mb-4">
+          <WithdrawAction requestId={request.id} />
+        </div>
+      )}
+      {request.status === "approved" && isAdmin && (
+        <div className="mb-4">
+          <CancelApprovalAction requestId={request.id} exportedCount={exportedCount} />
         </div>
       )}
 

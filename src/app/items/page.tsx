@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Upload } from "lucide-react";
 import { requireAdminPage } from "@/lib/session";
 import { listItems } from "@/lib/db";
 import { deleteItemAction, upsertItemAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
+import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -31,17 +31,10 @@ export default async function ItemsPage({
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <PageHeader
         title="品番マスタ"
-        description={`品目（品番）の登録・編集（全 ${total.toLocaleString()} 件）。一括登録は一括取込から行えます。`}
-        actions={
-          <Link
-            href="/import?tab=items"
-            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
-          >
-            <Upload className="h-4 w-4" />
-            Excel/CSVで一括取込
-          </Link>
-        }
+        description={`品目（品番）の登録・編集（全 ${total.toLocaleString()} 件）。`}
       />
+
+      <ImportPanel kinds={["items"]} title="Excel/CSVで品番マスタを一括登録" />
 
       {/* 追加・更新フォーム */}
       <form

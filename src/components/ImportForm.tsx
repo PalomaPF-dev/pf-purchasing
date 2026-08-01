@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, FileUp, Loader2 } from "lucide-react";
 
-type Kind = "prices" | "items" | "suppliers" | "supplier-contacts" | "employees";
+export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "employees";
+type Kind = ImportKind;
 
 const KIND_INFO: Record<Kind, { label: string; note: string }> = {
   prices: {
@@ -29,12 +30,13 @@ const KIND_INFO: Record<Kind, { label: string; note: string }> = {
   },
 };
 
-/** 一括取込フォーム（Excel/CSV）。タブでマスタ取込と単価申請取込を切り替える。 */
-export default function ImportForm({ initialTab }: { initialTab?: string }) {
+/**
+ * Excel/CSV 取込フォーム。各マスタ画面に埋め込んで使う。
+ * kinds を複数渡すとタブで切り替えられる（取引先マスタ＋担当窓口など）。
+ */
+export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
   const router = useRouter();
-  const [kind, setKind] = useState<Kind>(
-    initialTab && initialTab in KIND_INFO ? (initialTab as Kind) : "prices"
-  );
+  const [kind, setKind] = useState<Kind>(kinds[0]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>("");
@@ -81,9 +83,9 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
 
   return (
     <div className="space-y-4">
-      {/* タブ */}
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(KIND_INFO) as Kind[]).map((k) => (
+      {/* 取込の種類（1種類だけならタブは出さない） */}
+      <div className={`flex flex-wrap gap-2 ${kinds.length < 2 ? "hidden" : ""}`}>
+        {kinds.map((k) => (
           <button
             key={k}
             onClick={() => {

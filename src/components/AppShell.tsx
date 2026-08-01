@@ -10,7 +10,6 @@ import {
   Package,
   Building2,
   Users,
-  Upload,
   Download,
   DatabaseZap,
   Settings,
@@ -18,23 +17,38 @@ import {
   Mail,
   BookOpen,
 } from "lucide-react";
-import { AppShell as BaseAppShell, type NavItem } from "@paloma-pf/ui";
+import { AppShell as BaseAppShell, type NavGroup } from "@paloma-pf/ui";
 
-const NAV: NavItem[] = [
-  { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
-  { href: "/requests", label: "単価申請", icon: FileText },
-  { href: "/approvals", label: "承認", icon: Stamp, adminOnly: true },
-  { href: "/prices", label: "単価履歴", icon: History },
-  { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
-  // 一般（バイヤー）は自分の担当発注先のみ閲覧できる
-  { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
-  { href: "/employees", label: "社員マスタ", icon: Users, adminOnly: true },
-  { href: "/import", label: "一括取込", icon: Upload, adminOnly: true },
-  { href: "/export", label: "MC取込出力", icon: Download, adminOnly: true },
-  // 運用開始時の1回限りの作業（日常運用では使わない）
-  { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },
-  { href: "/settings", label: "承認W/F設定", icon: Settings, adminOnly: true },
-  { href: "/guide", label: "使い方", icon: BookOpen },
+/**
+ * ナビは「日常業務」と「設定」に分ける。
+ * マスタ・ユーザー登録・W/F設定など、運用前や運用中に随時整える項目は
+ * すべて「設定」にまとめ、日常の申請・承認画面と混ざらないようにする。
+ */
+const NAV: NavGroup[] = [
+  {
+    items: [
+      { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
+      { href: "/requests", label: "単価申請", icon: FileText },
+      { href: "/approvals", label: "承認", icon: Stamp, adminOnly: true },
+      { href: "/prices", label: "単価履歴", icon: History },
+      { href: "/export", label: "MC取込出力", icon: Download, adminOnly: true },
+    ],
+  },
+  {
+    title: "設定",
+    items: [
+      // 一般（バイヤー・チェイサー）は自分の担当発注先のみ閲覧できる
+      { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
+      { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
+      { href: "/employees", label: "ユーザー登録", icon: Users, adminOnly: true },
+      { href: "/settings", label: "承認W/F設定", icon: Settings, adminOnly: true },
+      // 運用開始時の1回限りの作業（日常運用では使わない）
+      { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },
+    ],
+  },
+  {
+    items: [{ href: "/guide", label: "使い方", icon: BookOpen }],
+  },
 ];
 
 /** 購買単価アプリのテーマ（ブルー、アクティブは角丸＋丸バー）。 */

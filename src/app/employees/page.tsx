@@ -1,11 +1,10 @@
-import Link from "next/link";
-import { Upload } from "lucide-react";
 import { requireAdminPage } from "@/lib/session";
 import { listEmployees } from "@/lib/db";
 import { deleteEmployeeAction, upsertEmployeeAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
 import SyncUsersButton from "@/components/SyncUsersButton";
+import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -29,18 +28,11 @@ export default async function EmployeesPage({
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
       <PageHeader
-        title="社員マスタ"
-        description={`社員番号・氏名・承認W/F・権限を管理します（全 ${rows.length.toLocaleString()} 名）。取引先の担当窓口の名寄せにも使います。`}
-        actions={
-          <Link
-            href="/import?tab=employees"
-            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
-          >
-            <Upload className="h-4 w-4" />
-            Excel/CSVで一括取込
-          </Link>
-        }
+        title="ユーザー登録（社員マスタ）"
+        description={`社員番号・氏名・承認W/F・権限を管理し、ログインユーザーをまとめて登録します（全 ${rows.length.toLocaleString()} 名）。取引先の担当窓口の名寄せにも使います。`}
       />
+
+      <ImportPanel kinds={["employees"]} title="Excel/CSVで社員一覧を一括登録" />
 
       <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-1 text-sm font-bold text-[#333333]">社員マスタからユーザーを登録</h2>

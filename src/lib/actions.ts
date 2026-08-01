@@ -6,6 +6,9 @@ import { requireSession, requireAdminSession, supplierScopeOf } from "./session"
 import {
   addRequestMessage,
   approveRequest,
+  cancelApproval,
+  getRequest,
+  withdrawRequest,
   backfillHistoryNames,
   canAccessSupplier,
   createRequest,
@@ -91,6 +94,45 @@ export async function submitRequestAction(requestId: string): Promise<void> {
   await submitRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName });
   revalidatePath("/requests");
   revalidatePath(`/requests/${requestId}`);
+}
+
+/**
+ * 申請の取り下げ（承認待ち → 下書き）。申請者本人と管理者のみ。
+ * 下書きに戻るので、そのまま修正して再提出、または削除できる。
+ */
+export async function withdrawRequestAction(requestId: string, reason: string): Promise<void> {
+  const s = await requireSession();
+  const detail = await getRequest(s.companyId, requestId);
+  if (!detail) throw new Error("申請が見つかりません。");
+  const mine = detail.request.applicantLoginId && detail.request.applicantLoginId === s.loginId;
+  if (!mine && s.role !== "admin") {
+    throw new Error("取り下げは申請者本人または管理者のみ実行できます。");
+  }
+  await withdrawRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, reason.trim() || null);
+  revalidatePath("/requests");
+  revalidatePath(`/requests/${requestId}`);
+  revalidatePath("/approvals");
+}
+
+/**
+ * 承認の取り消し（管理者のみ）。単価履歴への反映を元に戻して下書きに戻す。
+ * MC取込CSV出力済みの場合は force=true が必要。
+ */
+export async function cancelApprovalAction(
+  requestId: string,
+  reason: string,
+  force: boolean
+): Promise<{ removed: number; restored: number }> {
+  const s = await requireAdminSession();
+  const r = await cancelApproval(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, {
+    reason: reason.trim() || null,
+    force,
+  });
+  revalidatePath("/requests");
+  revalidatePath(`/requests/${requestId}`);
+  revalidatePath("/prices");
+  revalidatePath("/export");
+  return r;
 }
 
 export async function deleteRequestAction(requestId: string): Promise<void> {

@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Upload } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
 import { listSuppliers } from "@/lib/db";
 import { deleteSupplierAction, upsertSupplierAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
 import ContactsAssign from "@/components/ContactsAssign";
+import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -38,21 +38,17 @@ export default async function SuppliersPage({
         title="取引先マスタ"
         description={
           isAdmin
-            ? `発注先の登録・編集と担当バイヤーの割当（全 ${total.toLocaleString()} 件）。`
+            ? `発注先の登録・編集と担当（バイヤー主/副・チェイサー）の割当（全 ${total.toLocaleString()} 件）。`
             : `あなたが担当する発注先（${total.toLocaleString()} 件）。単価申請・単価履歴もこの発注先のみが対象です。`
         }
-        actions={
-          isAdmin && (
-            <Link
-              href="/import?tab=suppliers"
-              className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
-            >
-              <Upload className="h-4 w-4" />
-              Excel/CSVで一括取込
-            </Link>
-          )
-        }
       />
+
+      {isAdmin && (
+        <ImportPanel
+          kinds={["suppliers", "supplier-contacts"]}
+          title="Excel/CSVで取引先・担当窓口を一括登録"
+        />
+      )}
 
       {isAdmin && (
         <form

@@ -410,6 +410,117 @@ export async function submitRequest(
 }
 
 /**
+ * 申請の取り下げ（pending / mgr_approved → draft）。
+ * 申請者本人と管理者が実行でき、下書きに戻して修正・再提出または削除できる。
+ * 申請Noは維持する（同じ申請の続きとして扱う）。
+ */
+export async function withdrawRequest(
+  companyId: string,
+  requestId: string,
+  actor: { loginId: string | null; name: string },
+  reason: string | null
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE price_requests SET status = 'draft', updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${requestId}
+      AND status IN ('pending', 'mgr_approved')
+    RETURNING id`;
+  if ((rows as any[]).length === 0)
+    throw new Error("取り下げできませんでした（既に承認済みか、下書きに戻っています）。");
+  await addRequestMessage(
+    companyId,
+    requestId,
+    actor,
+    `申請を取り下げて下書きに戻しました。${reason ? `（理由: ${reason}）` : ""}`,
+    true
+  );
+}
+
+/**
+ * 承認の取り消し（approved → draft）。管理者のみ。
+ * 単価履歴に反映済みの行を削除し、その改訂で適用終了にした直前の行を元に戻す
+ * （直前行の適用終了日は、取り消す行が引き継いでいた終了日に復元する）。
+ * MC取込CSV出力済みの明細は mcframe 側と不整合になるため、既定では取り消さない。
+ */
+export async function cancelApproval(
+  companyId: string,
+  requestId: string,
+  actor: { loginId: string | null; name: string },
+  opts: { reason: string | null; force?: boolean }
+): Promise<{ removed: number; restored: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const cur = (await sql`
+    SELECT status FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[];
+  if (cur.length === 0) throw new Error("申請が見つかりません。");
+  if (cur[0].status !== "approved") throw new Error("承認済みの申請のみ取り消せます。");
+
+  const exported = (await sql`
+    SELECT COUNT(*)::int AS n FROM price_request_lines
+    WHERE company_id = ${companyId} AND request_id = ${requestId} AND exported_at IS NOT NULL`) as any[];
+  if (Number(exported[0]?.n ?? 0) > 0 && !opts.force) {
+    throw new Error(
+      "この申請はMC取込CSVに出力済みです。mcframe 側の単価も戻す必要があるため、確認のうえ「出力済みでも取り消す」を選択してください。"
+    );
+  }
+
+  // 取り消す履歴行（この申請の明細から作られた行）
+  const target = (await sql`
+    SELECT h.id, h.item_cd, h.item_branch, h.supplier_cd, h.loc_cd, h.dlv_cd, h.start_date, h.end_date
+    FROM price_history h
+    JOIN price_request_lines l ON l.id = h.request_line_id
+    WHERE h.company_id = ${companyId} AND l.request_id = ${requestId}`) as any[];
+
+  let restored = 0;
+  for (const h of target) {
+    // この改訂で適用終了にした直前の行を、元の適用終了日に戻す
+    const res = (await sql`
+      UPDATE price_history SET end_date = ${h.end_date}
+      WHERE company_id = ${companyId}
+        AND id <> ${h.id}
+        AND item_cd = ${h.item_cd}
+        AND COALESCE(item_branch, '*') = COALESCE(${h.item_branch}::text, '*')
+        AND supplier_cd = ${h.supplier_cd}
+        AND COALESCE(loc_cd, '*') = COALESCE(${h.loc_cd}::text, '*')
+        AND COALESCE(dlv_cd, '*') = COALESCE(${h.dlv_cd}::text, '*')
+        AND start_date < ${h.start_date}::date
+        AND end_date = (${h.start_date}::date - INTERVAL '1 day')::date
+      RETURNING id`) as any[];
+    restored += res.length;
+  }
+  const removed = (await sql`
+    DELETE FROM price_history h
+    USING price_request_lines l
+    WHERE h.request_line_id = l.id AND h.company_id = ${companyId} AND l.request_id = ${requestId}
+    RETURNING h.id`) as any[];
+
+  await sql`
+    UPDATE price_requests SET status = 'draft', updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${requestId}`;
+  // 再出力できるよう出力済みフラグも戻す
+  await sql`
+    UPDATE price_request_lines SET exported_at = NULL
+    WHERE company_id = ${companyId} AND request_id = ${requestId}`;
+  await sql`
+    INSERT INTO request_approvals (company_id, request_id, stage, action, approver_login_id, approver_name, comment)
+    VALUES (${companyId}, ${requestId}, 'dept', 'reject', ${actor.loginId}, ${actor.name},
+            ${opts.reason ?? "承認取消"})`;
+  await addRequestMessage(
+    companyId,
+    requestId,
+    actor,
+    `承認を取り消し、単価履歴の反映（${removed.length}件）を元に戻しました。下書きとして修正できます。${
+      opts.reason ? `（理由: ${opts.reason}）` : ""
+    }`,
+    true
+  );
+  return { removed: removed.length, restored };
+}
+
+/**
  * 承認（stage=mgr: pending → mgr_approved、stage=dept: mgr_approved → approved）。
  * 部門長承認で単価履歴（price_history）へ反映する。
  */
