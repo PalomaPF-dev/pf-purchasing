@@ -1822,7 +1822,9 @@ export async function filesForHistoryRows(
 
 export interface HistoryReasonInput {
   itemCd: string;
+  itemName: string | null;
   supplierCd: string;
+  supplierName: string | null;
   locCd: string | null;
   startDate: string;
   reason: string | null;
@@ -1836,31 +1838,27 @@ export interface HistoryReasonInput {
 
 /**
  * 単価改訂履歴の理由・内訳を既存の単価履歴に反映する（初期データ移行の補完）。
- * mcframe の単価情報には改訂理由が含まれないため、改訂履歴のエクスポートで後から埋める。
+ * mcframe の単価情報には改訂理由も品名も含まれないため、改訂履歴のエクスポートで後から埋める。
  * 品目CD・取引先CD・納入場所CD・適用開始日で既存行を特定して更新する（新規行は作らない）。
+ * 品名・取引先名は、移行で作られた名称なしのマスタ（スタブ）にも書き込む。
  */
 export async function applyHistoryReasons(
   companyId: string,
   rows: HistoryReasonInput[]
-): Promise<{ updated: number; unmatched: number }> {
+): Promise<{ updated: number; unmatched: number; itemNames: number; supplierNames: number }> {
   await ensureSchema();
   const sql = getSql();
   const CHUNK = 500;
   let updated = 0;
+  let itemNames = 0;
+  let supplierNames = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const c = rows.slice(i, i + CHUNK);
-    const res = (await sql`
-      UPDATE price_history h SET
-        reason = COALESCE(NULLIF(s.reason, ''), h.reason),
-        bd_material = COALESCE(s.bd_material, h.bd_material),
-        bd_revision = COALESCE(s.bd_revision, h.bd_revision),
-        bd_design = COALESCE(s.bd_design, h.bd_design),
-        bd_forex = COALESCE(s.bd_forex, h.bd_forex),
-        bd_other = COALESCE(s.bd_other, h.bd_other),
-        applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name)
-      FROM unnest(
+    const src = sql`unnest(
         ${c.map((r) => r.itemCd)}::text[],
+        ${c.map((r) => r.itemName ?? "")}::text[],
         ${c.map((r) => r.supplierCd)}::text[],
+        ${c.map((r) => r.supplierName ?? "")}::text[],
         ${c.map((r) => r.locCd ?? "")}::text[],
         ${c.map((r) => r.startDate)}::date[],
         ${c.map((r) => r.reason ?? "")}::text[],
@@ -1870,8 +1868,20 @@ export async function applyHistoryReasons(
         ${c.map((r) => r.bdForex)}::numeric[],
         ${c.map((r) => r.bdOther)}::numeric[],
         ${c.map((r) => r.applicantName ?? "")}::text[]
-      ) AS s(item_cd, supplier_cd, loc_cd, start_date, reason,
-             bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)
+      ) AS s(item_cd, item_name, supplier_cd, supplier_name, loc_cd, start_date, reason,
+             bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)`;
+    const res = (await sql`
+      UPDATE price_history h SET
+        reason = COALESCE(NULLIF(s.reason, ''), h.reason),
+        bd_material = COALESCE(s.bd_material, h.bd_material),
+        bd_revision = COALESCE(s.bd_revision, h.bd_revision),
+        bd_design = COALESCE(s.bd_design, h.bd_design),
+        bd_forex = COALESCE(s.bd_forex, h.bd_forex),
+        bd_other = COALESCE(s.bd_other, h.bd_other),
+        applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name),
+        item_name = COALESCE(NULLIF(h.item_name, ''), NULLIF(s.item_name, '')),
+        supplier_name = COALESCE(NULLIF(h.supplier_name, ''), NULLIF(s.supplier_name, ''))
+      FROM ${src}
       WHERE h.company_id = ${companyId}
         AND h.item_cd = s.item_cd
         AND h.supplier_cd = s.supplier_cd
@@ -1879,8 +1889,24 @@ export async function applyHistoryReasons(
         AND h.start_date = s.start_date
       RETURNING h.id`) as any[];
     updated += res.length;
+
+    // 移行で作られた名称なしのマスタ（スタブ）にも品名・取引先名を入れる
+    const n1 = (await sql`
+      UPDATE items i SET name = s.item_name, updated_at = NOW()
+      FROM ${src}
+      WHERE i.company_id = ${companyId} AND i.code = s.item_cd
+        AND i.name = '' AND s.item_name <> ''
+      RETURNING i.id`) as any[];
+    itemNames += n1.length;
+    const n2 = (await sql`
+      UPDATE suppliers sp SET name = s.supplier_name, updated_at = NOW()
+      FROM ${src}
+      WHERE sp.company_id = ${companyId} AND sp.code = s.supplier_cd
+        AND sp.name = '' AND s.supplier_name <> ''
+      RETURNING sp.id`) as any[];
+    supplierNames += n2.length;
   }
-  return { updated, unmatched: Math.max(0, rows.length - updated) };
+  return { updated, unmatched: Math.max(0, rows.length - updated), itemNames, supplierNames };
 }
 
 /** 申請に含まれる取引先CDの一覧（添付の閲覧権限チェック用） */

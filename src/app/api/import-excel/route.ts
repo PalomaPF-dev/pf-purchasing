@@ -39,7 +39,7 @@ const ITEM_HEADERS = [
 const SUPPLIER_HEADERS = ["取引先CD", "取引先名", "担当バイヤー社員番号", "備考"];
 const CONTACT_HEADERS = ["取引先CD", "取引先名", "企画グループ", "管理グループ"];
 const REASON_HEADERS = [
-  "取引先CD", "品目CD", "開始日", "納入場所CD",
+  "取引先CD", "取引先名", "品目CD", "品名", "開始日", "納入場所CD",
   "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考", "出力社員名",
 ];
 
@@ -341,7 +341,9 @@ export async function POST(req: Request) {
       const payload = dataRows
         .map((r) => ({
           itemCd: get(r, "品目CD"),
+          itemName: get(r, "品名") || null,
           supplierCd: get(r, "取引先CD", "発注先CD"),
+          supplierName: get(r, "取引先名") || null,
           locCd: get(r, "納入場所CD") || null,
           startDate: normDate(get(r, "開始日")),
           reason: get(r, "備考") || null,
@@ -359,6 +361,7 @@ export async function POST(req: Request) {
             r.supplierCd &&
             r.startDate &&
             (r.reason ||
+              r.itemName ||
               [r.bdMaterial, r.bdRevision, r.bdDesign, r.bdForex, r.bdOther].some((v) => v != null))
         )
         .map((r) => ({ ...r, startDate: r.startDate as string }));
@@ -370,9 +373,11 @@ export async function POST(req: Request) {
         ok: true,
         kind,
         count: res.updated,
+        itemNames: res.itemNames,
+        supplierNames: res.supplierNames,
         errors:
           res.unmatched > 0
-            ? [`単価履歴に一致しなかった行が ${res.unmatched} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
+            ? [`単価履歴に一致しなかった行が ${res.unmatched.toLocaleString()} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
             : [],
       });
     }
