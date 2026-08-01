@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Search } from "lucide-react";
 
 export interface PickedItem {
@@ -36,6 +36,28 @@ export default function ItemPicker({
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<PickedItem[]>([]);
   const boxRef = useRef<HTMLDivElement>(null);
+  // 候補リストは明細テーブル（横スクロール）の外側に固定配置で描く。
+  // absolute のままだと overflow コンテナに切られて候補が見えなくなるため。
+  const [rect, setRect] = useState<{ left: number; top: number; width: number } | null>(null);
+
+  const measure = useCallback(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setRect({ left: r.left, top: r.bottom + 4, width: r.width });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    measure();
+    const onMove = () => measure();
+    window.addEventListener("scroll", onMove, true);
+    window.addEventListener("resize", onMove);
+    return () => {
+      window.removeEventListener("scroll", onMove, true);
+      window.removeEventListener("resize", onMove);
+    };
+  }, [open, measure]);
 
   // 入力値は親（明細の品目CD）が保持するため、検索キーもそれをそのまま使う
   useEffect(() => {
@@ -77,11 +99,16 @@ export default function ItemPicker({
           onTextChange(e.target.value);
           setOpen(true);
         }}
-        onFocus={() => setOpen(true)}
+        onFocus={() => {
+          setOpen(true);
+          measure();
+        }}
         placeholder="品目CD・品名で検索"
       />
-      {open && supplierCd && (
-        <div className="absolute left-0 z-20 mt-1 max-h-72 w-[28rem] max-w-[80vw] overflow-y-auto rounded-lg border border-[#d5d5d5] bg-white shadow-lg">
+      {open && supplierCd && rect && (
+        <div
+          style={{ left: rect.left, top: rect.top, minWidth: Math.max(rect.width, 360) }}
+          className="fixed z-50 max-h-72 w-[30rem] max-w-[90vw] overflow-y-auto rounded-lg border border-[#d5d5d5] bg-white shadow-xl">
           {loading && (
             <div className="flex items-center gap-2 px-3 py-2 text-xs text-[#707070]">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

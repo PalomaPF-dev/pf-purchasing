@@ -507,12 +507,12 @@ export default function RequestForm({
 
           {/* 明細（表形式） */}
           <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-            <table className="w-full min-w-[1100px] border-collapse text-sm">
+            <table className="w-full min-w-[1560px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[#eeeeee] bg-[#fafafa]">
                   <th className={`${th} w-10`}>#</th>
-                  <th className={`${th} w-52`}>品目CD *</th>
-                  <th className={`${th} w-48`}>品名</th>
+                  <th className={`${th} w-60`}>品目CD *</th>
+                  <th className={`${th} w-56`}>品名</th>
                   <th className={`${th} w-24`}>納入場所</th>
                   <th className={`${th} w-28 border-l border-[#eeeeee] bg-rose-50`}>適用日 *</th>
                   <th className={`${th} w-24 bg-rose-50 text-right`}>新単価 *</th>
