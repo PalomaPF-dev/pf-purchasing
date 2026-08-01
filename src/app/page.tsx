@@ -19,7 +19,13 @@ import PageHeader from "@/components/PageHeader";
 export const dynamic = "force-dynamic";
 
 /** ダッシュボード: 承認待ち・自分の申請・最近の改訂の見える化。 */
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ forbidden?: string }>;
+}) {
+  const sp = await searchParams;
+  const forbidden = sp.forbidden === "1";
   if (!hasDatabase()) {
     return (
       <div className="mx-auto max-w-2xl p-6">
@@ -67,6 +73,18 @@ export default async function DashboardPage() {
           </Link>
         }
       />
+
+      {/* 管理者専用ページへアクセスした一般ユーザーへの案内 */}
+      {forbidden && (
+        <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-bold">このページは管理者のみ利用できます</p>
+          <p className="mt-1">
+            現在のアカウント（{session.userName || loginId || "—"}）は一般権限のため、マスタ管理・一括取込・
+            MC取込出力・データ移行は開けません。ポータルの管理画面で役割を「管理者」に変更後、
+            ポータルからこのアプリを開き直すと反映されます。
+          </p>
+        </div>
+      )}
 
       {/* ステータスカード */}
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
