@@ -1635,6 +1635,27 @@ export async function listEmployees(
   }));
 }
 
+/**
+ * 承認W/Fの承認者リストを社員マスタから作り直す。
+ * 承認者はユーザー登録画面の「承認W/F」で1人ずつ指定する運用のため、
+ * 社員を追加・編集・削除したらその場で承認W/F設定へ反映する。
+ */
+export async function refreshApproversFromEmployees(
+  companyId: string
+): Promise<{ mgr: string[]; dept: string[] }> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT login_id, wf_role FROM employees
+    WHERE company_id = ${companyId} AND active AND wf_role IN ('mgr', 'dept')
+    ORDER BY login_id`) as any[];
+  const mgr = rows.filter((r) => r.wf_role === "mgr").map((r) => r.login_id as string);
+  const dept = rows.filter((r) => r.wf_role === "dept").map((r) => r.login_id as string);
+  const wf = await getWfSettings(companyId);
+  await saveWfSettings(companyId, { ...wf, mgrApprovers: mgr, deptApprovers: dept });
+  return { mgr, dept };
+}
+
 export async function upsertEmployee(
   companyId: string,
   e: {
@@ -1658,6 +1679,7 @@ export async function upsertEmployee(
       email = COALESCE(EXCLUDED.email, employees.email),
       active = true,
       updated_at = NOW()`;
+  await refreshApproversFromEmployees(companyId);
 }
 
 /**
@@ -1688,11 +1710,13 @@ export async function updateEmployee(
     WHERE company_id = ${companyId} AND id = ${id}
     RETURNING id`;
   if ((rows as any[]).length === 0) throw new Error("社員が見つかりません。");
+  await refreshApproversFromEmployees(companyId);
 }
 
 export async function deleteEmployee(companyId: string, id: string): Promise<void> {
   const sql = getSql();
   await sql`DELETE FROM employees WHERE company_id = ${companyId} AND id = ${id}`;
+  await refreshApproversFromEmployees(companyId);
 }
 
 /** 氏名 → 社員番号の対応表（担当窓口の名寄せに使う） */
@@ -1734,11 +1758,8 @@ export async function syncUsersFromEmployees(
       created++;
     }
   }
-  // 承認者リストを社員マスタに合わせる（W/F設定の手入力を上書き）
-  const mgr = emps.filter((e) => e.active && e.wfRole === "mgr").map((e) => e.loginId);
-  const dept = emps.filter((e) => e.active && e.wfRole === "dept").map((e) => e.loginId);
-  const wf = await getWfSettings(companyId);
-  await saveWfSettings(companyId, { ...wf, mgrApprovers: mgr, deptApprovers: dept });
+  // 承認者リストも社員マスタに合わせる
+  const { mgr, dept } = await refreshApproversFromEmployees(companyId);
   return { created, updated, mgr, dept };
 }
 

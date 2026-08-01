@@ -377,6 +377,7 @@ export async function upsertEmployeeAction(formData: FormData): Promise<void> {
     email: String(formData.get("email") ?? "").trim() || null,
   });
   revalidatePath("/employees");
+  revalidatePath("/settings");
 }
 
 /** 登録済み社員の編集（管理者のみ）。社員番号は変更できない。 */
@@ -400,12 +401,14 @@ export async function updateEmployeeAction(
     active: e.active,
   });
   revalidatePath("/employees");
+  revalidatePath("/settings");
 }
 
 export async function deleteEmployeeAction(id: string): Promise<void> {
   const s = await requireAdminSession();
   await deleteEmployee(s.companyId, id);
   revalidatePath("/employees");
+  revalidatePath("/settings");
 }
 
 /**
