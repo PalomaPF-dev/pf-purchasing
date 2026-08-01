@@ -151,7 +151,7 @@ function bdSum(l: FormLine): number | null {
  * 単価申請フォーム（新規・下書き編集共通）。
  * - 見積書（PDF/画像）のAI読み取りで明細を自動入力
  * - 品番・取引先マスタのインクリメンタル検索
- * - 現行単価の自動取得（単価台帳から）
+ * - 現行単価の自動取得（単価履歴から）
  */
 export default function RequestForm({
   requestId,
@@ -188,7 +188,7 @@ export default function RequestForm({
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
   }
 
-  /** 現行単価を単価台帳から自動取得 */
+  /** 現行単価を単価履歴から自動取得 */
   async function fetchCurrent(i: number) {
     const l = lines[i];
     if (!l.itemCd || !l.supplierCd) {
@@ -215,7 +215,7 @@ export default function RequestForm({
         supplierName: lines[i].supplierName || (data.current.supplierName ?? ""),
       });
     } else {
-      setError(`明細${i + 1}: 単価台帳に現行単価が見つかりませんでした（新規品目の場合はそのまま申請できます）。`);
+      setError(`明細${i + 1}: 単価履歴に現行単価が見つかりませんでした（新規品目の場合はそのまま申請できます）。`);
     }
   }
 
@@ -540,7 +540,7 @@ export default function RequestForm({
                   />
                   <button
                     type="button"
-                    title="単価台帳から現行単価を取得"
+                    title="単価履歴から現行単価を取得"
                     onClick={() => void fetchCurrent(i)}
                     className="shrink-0 rounded border border-[#d5d5d5] px-2 text-[#2563eb] hover:bg-[#eef4ff]"
                   >

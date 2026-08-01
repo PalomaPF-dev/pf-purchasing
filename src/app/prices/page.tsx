@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 100;
 
-/** 単価台帳・履歴の検索一覧 */
+/** 単価履歴の検索一覧 */
 export default async function PricesPage({
   searchParams,
 }: {
@@ -39,7 +39,7 @@ export default async function PricesPage({
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader
-        title="単価台帳・履歴"
+        title="単価履歴"
         description={`購買単価の適用履歴（全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
       />
 

@@ -5,7 +5,7 @@ import MigrateForm from "@/components/MigrateForm";
 
 export const dynamic = "force-dynamic";
 
-/** 単価履歴のデータ移行（mcframe 単価情報 → 単価台帳） */
+/** 単価履歴のデータ移行（mcframe 単価情報 → 単価履歴） */
 export default async function MigratePage() {
   const session = await requireAdminPage();
   const stats = await dashboardStats(session.companyId);

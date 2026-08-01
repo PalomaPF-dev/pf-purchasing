@@ -354,7 +354,7 @@ function Sheet({
           bdDesign={prevLine?.bdDesign ?? null}
           bdForex={prevLine?.bdForex ?? null}
           bdOther={prevLine?.bdOther ?? null}
-          note={prevLine?.reasonNote ?? prevHist?.reason ?? (prevHist ? "（単価台帳の履歴データ）" : null)}
+          note={prevLine?.reasonNote ?? prevHist?.reason ?? (prevHist ? "（単価履歴の履歴データ）" : null)}
         />
       ) : (
         <div className="border-t border-dashed border-slate-400 pt-2 text-[12px] text-slate-500">

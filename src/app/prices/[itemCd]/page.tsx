@@ -54,7 +54,7 @@ export default async function PriceHistoryPage({
         className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#2563eb] hover:underline"
       >
         <ArrowLeft className="h-4 w-4" />
-        単価台帳に戻る
+        単価履歴に戻る
       </Link>
       <PageHeader
         title={`単価改訂履歴: ${itemCd}`}
