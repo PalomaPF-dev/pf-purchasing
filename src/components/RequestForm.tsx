@@ -131,7 +131,16 @@ function toPayload(lines: FormLine[]): LineInput[] {
   }));
 }
 
-/** 差額（購入単価 − 現行単価）。片方未入力なら null */
+/** YYYY-MM-DD の前日（旧単価の取消日＝新単価適用日の前日） */
+function dayBeforeStr(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "—";
+  d.setUTCDate(d.getUTCDate() - 1);
+  const s = d.toISOString().slice(0, 10);
+  return s.replace(/-/g, "/");
+}
+
+/** 差額（新単価 − 旧単価）。片方未入力なら null */
 function diffOf(l: FormLine): number | null {
   const cur = toNum(l.currentPrice);
   const nw = toNum(l.newPrice);
@@ -466,65 +475,99 @@ export default function RequestForm({
                 />
               </div>
 
-              <div>
-                <label className={labelCls}>適用開始日 *</label>
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={l.startDate}
-                  onChange={(e) => update(i, { startDate: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>適用終了日</label>
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={l.endDate}
-                  onChange={(e) => update(i, { endDate: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>現行単価</label>
-                <div className="flex gap-1">
-                  <input
-                    className={`${inputCls} text-right font-mono`}
-                    inputMode="decimal"
-                    value={l.currentPrice}
-                    onChange={(e) => update(i, { currentPrice: e.target.value })}
-                  />
+            </div>
+
+            {/* 新単価 / 旧単価（帳票と同じ並びで新旧を対比） */}
+            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
+              {/* 旧単価（現行） */}
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="mb-2 flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                  旧 単 価（現行）
                   <button
                     type="button"
                     title="単価履歴から現行単価を取得"
                     onClick={() => void fetchCurrent(i)}
-                    className="shrink-0 rounded border border-[#d5d5d5] px-2 text-[#e11d48] hover:bg-[#fff1f2]"
+                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
                   >
-                    <Search className="h-4 w-4" />
+                    <Search className="h-3 w-3" />
+                    履歴から取得
                   </button>
+                  {l.currentPrice.trim() === "" && (
+                    <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                      新規登録品
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className={labelCls}>取消日（自動）</label>
+                    <div className="rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-500">
+                      {l.currentPrice.trim() === "" || !l.startDate
+                        ? "—"
+                        : dayBeforeStr(l.startDate)}
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>単価</label>
+                    <input
+                      className={`${inputCls} text-right font-mono`}
+                      inputMode="decimal"
+                      value={l.currentPrice}
+                      onChange={(e) => update(i, { currentPrice: e.target.value })}
+                      placeholder="（新規は空欄）"
+                    />
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className={labelCls}>購入単価（新単価）*</label>
-                <input
-                  className={`${inputCls} text-right font-mono font-bold`}
-                  inputMode="decimal"
-                  value={l.newPrice}
-                  onChange={(e) => update(i, { newPrice: e.target.value })}
-                />
+
+              {/* 新単価 */}
+              <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3">
+                <div className="mb-2 text-[11px] font-bold text-rose-800">新 単 価</div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div>
+                    <label className={labelCls}>適用日 *</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={l.startDate}
+                      onChange={(e) => update(i, { startDate: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>単価 *</label>
+                    <input
+                      className={`${inputCls} text-right font-mono font-bold`}
+                      inputMode="decimal"
+                      value={l.newPrice}
+                      onChange={(e) => update(i, { newPrice: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>支給単価</label>
+                    <input
+                      className={`${inputCls} text-right font-mono`}
+                      inputMode="decimal"
+                      value={l.paidSupplyPrice}
+                      onChange={(e) => update(i, { paidSupplyPrice: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>適用終了日</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={l.endDate}
+                      onChange={(e) => update(i, { endDate: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className={labelCls}>有償支給価格</label>
-                <input
-                  className={`${inputCls} text-right font-mono`}
-                  inputMode="decimal"
-                  value={l.paidSupplyPrice}
-                  onChange={(e) => update(i, { paidSupplyPrice: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>単価差（自動計算）</label>
+
+              {/* 単価差 */}
+              <div className="flex min-w-32 flex-col justify-center rounded-lg border border-[#e5e5e5] p-3">
+                <div className="mb-1 text-[11px] font-bold text-[#707070]">単価差（自動）</div>
                 <div
-                  className={`rounded border px-2 py-1.5 text-right font-mono text-sm ${
+                  className={`rounded border px-2 py-2 text-right font-mono text-lg font-bold ${
                     d == null
                       ? "border-[#eeeeee] bg-[#fafafa] text-[#a0a0a0]"
                       : d > 0
