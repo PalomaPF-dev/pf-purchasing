@@ -70,7 +70,7 @@ export default async function RequestPrintPage({
       <div className="no-print mx-auto flex max-w-5xl items-center justify-between p-4">
         <Link
           href={`/requests/${id}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2563eb] hover:underline"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-[#e11d48] hover:underline"
         >
           <ArrowLeft className="h-4 w-4" />
           申請詳細に戻る

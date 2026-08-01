@@ -7,7 +7,7 @@ export default function PrintButton({ label = "印刷 / PDF保存" }: { label?: 
   return (
     <button
       onClick={() => window.print()}
-      className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8]"
+      className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]"
     >
       <Printer className="h-4 w-4" />
       {label}

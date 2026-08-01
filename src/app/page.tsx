@@ -55,7 +55,7 @@ export default async function DashboardPage({
     { label: "MGR承認待ち", value: stats.pendingCount, href: "/approvals", accent: "text-amber-600" },
     { label: "部門長承認待ち", value: stats.mgrApprovedCount, href: "/approvals", accent: "text-amber-600" },
     { label: "今月の承認済", value: stats.approvedThisMonth, href: "/requests?status=approved", accent: "text-emerald-600" },
-    { label: "MC未出力明細", value: stats.unexportedCount, href: "/export", accent: "text-blue-600" },
+    { label: "MC未出力明細", value: stats.unexportedCount, href: "/export", accent: "text-rose-600" },
   ];
 
   return (
@@ -66,7 +66,7 @@ export default async function DashboardPage({
         actions={
           <Link
             href="/requests/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8]"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]"
           >
             <Plus className="h-4 w-4" />
             単価申請を作成
@@ -106,10 +106,10 @@ export default async function DashboardPage({
           <section className="rounded-xl border border-[#e5e5e5] bg-white">
             <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
               <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
-                <Stamp className="h-4 w-4 text-[#2563eb]" />
+                <Stamp className="h-4 w-4 text-[#e11d48]" />
                 承認待ちの申請
               </h2>
-              <Link href="/approvals" className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline">
+              <Link href="/approvals" className="flex items-center gap-1 text-xs text-[#e11d48] hover:underline">
                 すべて見る <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
@@ -147,10 +147,10 @@ export default async function DashboardPage({
         <section className="rounded-xl border border-[#e5e5e5] bg-white">
           <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
-              <FileText className="h-4 w-4 text-[#2563eb]" />
+              <FileText className="h-4 w-4 text-[#e11d48]" />
               自分の申請
             </h2>
-            <Link href="/requests?mine=1" className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline">
+            <Link href="/requests?mine=1" className="flex items-center gap-1 text-xs text-[#e11d48] hover:underline">
               すべて見る <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
@@ -181,16 +181,16 @@ export default async function DashboardPage({
         <section className="rounded-xl border border-[#e5e5e5] bg-white lg:col-span-2">
           <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
-              <History className="h-4 w-4 text-[#2563eb]" />
+              <History className="h-4 w-4 text-[#e11d48]" />
               単価履歴（最新）
             </h2>
-            <Link href="/prices" className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline">
+            <Link href="/prices" className="flex items-center gap-1 text-xs text-[#e11d48] hover:underline">
               単価履歴を見る <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
           {recent.rows.length === 0 ? (
             <p className="px-4 py-6 text-sm text-[#707070]">
-              単価データがありません。<Link href="/migrate" className="text-[#2563eb] hover:underline">データ移行</Link>から現行の単価履歴を取り込めます。
+              単価データがありません。<Link href="/migrate" className="text-[#e11d48] hover:underline">データ移行</Link>から現行の単価履歴を取り込めます。
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -209,7 +209,7 @@ export default async function DashboardPage({
                   {recent.rows.map((p) => (
                     <tr key={p.id} className="border-b border-[#f5f5f5]">
                       <td className="px-4 py-2 font-mono">
-                        <Link href={`/prices/${encodeURIComponent(p.itemCd)}?supplier=${encodeURIComponent(p.supplierCd)}`} className="text-[#2563eb] hover:underline">
+                        <Link href={`/prices/${encodeURIComponent(p.itemCd)}?supplier=${encodeURIComponent(p.supplierCd)}`} className="text-[#e11d48] hover:underline">
                           {p.itemCd}
                         </Link>
                       </td>
@@ -233,28 +233,28 @@ export default async function DashboardPage({
       {isAdmin && (
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Link href="/items" className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 hover:shadow-sm">
-            <Package className="h-5 w-5 text-[#2563eb]" />
+            <Package className="h-5 w-5 text-[#e11d48]" />
             <div>
               <div className="text-xs text-[#707070]">品番マスタ</div>
               <div className="text-sm font-bold">{stats.itemCount.toLocaleString()} 件</div>
             </div>
           </Link>
           <Link href="/suppliers" className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 hover:shadow-sm">
-            <Building2 className="h-5 w-5 text-[#2563eb]" />
+            <Building2 className="h-5 w-5 text-[#e11d48]" />
             <div>
               <div className="text-xs text-[#707070]">取引先マスタ</div>
               <div className="text-sm font-bold">{stats.supplierCount.toLocaleString()} 件</div>
             </div>
           </Link>
           <Link href="/prices" className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 hover:shadow-sm">
-            <History className="h-5 w-5 text-[#2563eb]" />
+            <History className="h-5 w-5 text-[#e11d48]" />
             <div>
               <div className="text-xs text-[#707070]">単価履歴</div>
               <div className="text-sm font-bold">{stats.historyCount.toLocaleString()} 件</div>
             </div>
           </Link>
           <Link href="/export" className="flex items-center gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4 hover:shadow-sm">
-            <Download className="h-5 w-5 text-[#2563eb]" />
+            <Download className="h-5 w-5 text-[#e11d48]" />
             <div>
               <div className="text-xs text-[#707070]">MC未出力</div>
               <div className="text-sm font-bold">{stats.unexportedCount.toLocaleString()} 件</div>

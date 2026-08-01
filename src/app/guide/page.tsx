@@ -68,7 +68,7 @@ export default async function GuidePage() {
       <div className="space-y-4">
         {SECTIONS.map((s) => (
           <section key={s.title} className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-            <h2 className="mb-3 text-sm font-bold text-[#333333] after:mt-1.5 after:block after:h-[3px] after:w-8 after:rounded-full after:bg-[#2563eb] after:content-['']">
+            <h2 className="mb-3 text-sm font-bold text-[#333333] after:mt-1.5 after:block after:h-[3px] after:w-8 after:rounded-full after:bg-[#e11d48] after:content-['']">
               {s.title}
             </h2>
             <div className="space-y-2 text-sm leading-relaxed text-[#555555]">

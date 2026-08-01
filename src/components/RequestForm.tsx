@@ -351,7 +351,7 @@ export default function RequestForm({
   }
 
   const inputCls =
-    "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1.5 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]";
+    "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
   const labelCls = "block text-[11px] font-medium text-[#707070] mb-0.5";
 
   return (
@@ -382,7 +382,7 @@ export default function RequestForm({
             type="button"
             disabled={quoteLoading}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#2563eb] px-4 py-2 text-sm font-semibold text-[#2563eb] hover:bg-[#eef4ff] disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2] disabled:opacity-50"
           >
             {quoteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
             {quoteLoading ? "見積書を読み取り中…" : "見積書から自動入力（PDF/画像）"}
@@ -542,7 +542,7 @@ export default function RequestForm({
                     type="button"
                     title="単価履歴から現行単価を取得"
                     onClick={() => void fetchCurrent(i)}
-                    className="shrink-0 rounded border border-[#d5d5d5] px-2 text-[#2563eb] hover:bg-[#eef4ff]"
+                    className="shrink-0 rounded border border-[#d5d5d5] px-2 text-[#e11d48] hover:bg-[#fff1f2]"
                   >
                     <Search className="h-4 w-4" />
                   </button>
@@ -633,7 +633,7 @@ export default function RequestForm({
       <button
         type="button"
         onClick={addLine}
-        className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#c5c5c5] px-4 py-2 text-sm text-[#555555] hover:border-[#2563eb] hover:text-[#2563eb]"
+        className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#c5c5c5] px-4 py-2 text-sm text-[#555555] hover:border-[#e11d48] hover:text-[#e11d48]"
       >
         <Plus className="h-4 w-4" />
         明細を追加
@@ -658,7 +658,7 @@ export default function RequestForm({
           type="button"
           disabled={saving !== "none"}
           onClick={() => void save(true)}
-          className="rounded-lg bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+          className="rounded-lg bg-[#e11d48] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
         >
           {saving === "submit" ? "提出中…" : "申請を提出（承認へ回す）"}
         </button>

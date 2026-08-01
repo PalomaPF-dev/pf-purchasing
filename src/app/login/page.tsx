@@ -55,7 +55,7 @@ function LoginInner() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f7f5]">
-      <div className="h-1 shrink-0 bg-[#2563eb]" />
+      <div className="h-1 shrink-0 bg-[#e11d48]" />
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md">
           <div className="rounded-2xl border border-[#e5e5e5] bg-white px-8 py-8">
@@ -73,7 +73,7 @@ function LoginInner() {
               </div>
             )}
 
-            <h2 className="mb-6 text-lg font-semibold text-[#333333] after:mt-2 after:block after:h-[3px] after:w-8 after:rounded-full after:bg-[#2563eb] after:content-['']">
+            <h2 className="mb-6 text-lg font-semibold text-[#333333] after:mt-2 after:block after:h-[3px] after:w-8 after:rounded-full after:bg-[#e11d48] after:content-['']">
               ログイン
             </h2>
 
@@ -86,7 +86,7 @@ function LoginInner() {
                   required
                   value={loginId}
                   onChange={(e) => setLoginId(e.target.value)}
-                  className="w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                  className="w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
                   placeholder="例: 12345（管理者は admin）"
                 />
               </div>
@@ -97,7 +97,7 @@ function LoginInner() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                  className="w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
                   placeholder="••••••••"
                 />
               </div>
@@ -109,17 +109,17 @@ function LoginInner() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#1d4fd8] disabled:cursor-not-allowed disabled:opacity-50"
+                className="w-full rounded-lg bg-[#e11d48] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#be123c] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {loading ? "ログイン中…" : "ログイン"}
               </button>
             </form>
 
             {/* ポータル一括ログイン（ポータルでログイン済みなら各アプリは自動ログイン） */}
-            <div className="mt-4 rounded-lg border border-[#2563eb]/40 bg-[#eef4ff] px-3 py-2.5 text-center text-sm">
+            <div className="mt-4 rounded-lg border border-[#e11d48]/40 bg-[#fff1f2] px-3 py-2.5 text-center text-sm">
               <a
                 href="https://portal.paloma-pf.com/"
-                className="font-semibold text-[#2563eb] hover:underline"
+                className="font-semibold text-[#e11d48] hover:underline"
               >
                 ポータルから一括ログイン
               </a>
@@ -135,7 +135,7 @@ function LoginInner() {
           <div className="mt-3 text-center">
             <a
               href="https://portal.paloma-pf.com"
-              className="text-sm text-[#707070] transition-colors hover:text-[#2563eb]"
+              className="text-sm text-[#707070] transition-colors hover:text-[#e11d48]"
             >
               ← ポータルへ戻る
             </a>

@@ -53,7 +53,7 @@ export default function ApprovalActions({
         onChange={(e) => setComment(e.target.value)}
         rows={2}
         placeholder="コメント（承認時は任意・差し戻し時は必須）"
-        className="mb-3 w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none"
+        className="mb-3 w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none"
       />
       {error && (
         <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
