@@ -5,6 +5,7 @@ import { upsertItemAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import ImportPanel from "@/components/ImportPanel";
 import ItemRow from "@/components/ItemRow";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export default async function ItemsPage({
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <PageHeader
         title="品番マスタ"
-        description={`品目（品番）の追加・編集・削除（全 ${total.toLocaleString()} 件）。「現在の取引先」と「適用日」は単価履歴の最新の適用単価から表示しています。`}
+        description={`品目（品番）の追加・編集・削除（全 ${total.toLocaleString()} 件）。「取引先CD・取引先名・適用日」は単価履歴の最新の適用単価から表示しています。`}
       />
 
       <ImportPanel kinds={["items"]} title="Excel/CSVで品番マスタを一括登録" />
@@ -92,14 +93,7 @@ export default async function ItemsPage({
       </form>
 
       {/* 検索 */}
-      <form action="/items" method="GET" className="mb-4">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="品目CD・品名で検索"
-          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
-        />
-      </form>
+      <SearchBox action="/items" q={q} placeholder="品目CD・品名で検索" total={total} />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">
@@ -108,7 +102,8 @@ export default async function ItemsPage({
               <th className="px-4 py-2.5 font-medium">品目CD</th>
               <th className="px-2 py-2.5 font-medium">枝番</th>
               <th className="px-2 py-2.5 font-medium">品名</th>
-              <th className="px-2 py-2.5 font-medium">現在の取引先</th>
+              <th className="px-2 py-2.5 font-medium">取引先CD</th>
+              <th className="px-2 py-2.5 font-medium">取引先名</th>
               <th className="px-2 py-2.5 font-medium">科目</th>
               <th className="px-2 py-2.5 font-medium">科目名</th>
               <th className="px-2 py-2.5 font-medium">科目内訳</th>

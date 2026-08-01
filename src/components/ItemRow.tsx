@@ -78,16 +78,8 @@ export default function ItemRow({ item }: { item: Item }) {
           {item.name || dash}
           {!item.active && <span className="ml-2 text-xs text-[#a0a0a0]">（無効）</span>}
         </td>
-        <td className="px-2 py-2 text-xs">
-          {item.currentSupplierCd ? (
-            <>
-              <span className="font-mono">{item.currentSupplierCd}</span>
-              {item.currentSupplierName && <span className="ml-1">{item.currentSupplierName}</span>}
-            </>
-          ) : (
-            dash
-          )}
-        </td>
+        <td className="px-2 py-2 font-mono text-xs">{item.currentSupplierCd ?? dash}</td>
+        <td className="px-2 py-2 text-xs">{item.currentSupplierName || dash}</td>
         <td className="px-2 py-2 font-mono text-xs">{item.acctCd ?? dash}</td>
         <td className="px-2 py-2 text-xs">{item.acctName ?? dash}</td>
         <td className="px-2 py-2 text-xs">{item.acctDetail ?? dash}</td>
@@ -132,9 +124,8 @@ export default function ItemRow({ item }: { item: Item }) {
       <td className="px-2 py-2">
         <input autoFocus value={f.name} onChange={set("name")} onKeyDown={onKey} className={cell} />
       </td>
-      <td className="px-2 py-2 text-xs text-[#707070]">
-        {item.currentSupplierCd ? `${item.currentSupplierCd} ${item.currentSupplierName ?? ""}` : "—"}
-      </td>
+      <td className="px-2 py-2 font-mono text-xs text-[#707070]">{item.currentSupplierCd ?? "—"}</td>
+      <td className="px-2 py-2 text-xs text-[#707070]">{item.currentSupplierName || "—"}</td>
       <td className="px-2 py-2">
         <input value={f.acctCd} onChange={set("acctCd")} onKeyDown={onKey} className={cell} />
       </td>
