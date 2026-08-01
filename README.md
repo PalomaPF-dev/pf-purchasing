@@ -19,6 +19,11 @@ mcframe（基幹システム）への取込データ出力までを一気通貫�
 - `@paloma-pf/ui` 共通シェル / ポータルSSO・一括アカウント発行（`PF_PROVISION_KEY`）
 - Anthropic API（見積書AI読み取り）/ exceljs（Excel取込）
 
+## 本番環境
+
+- URL: https://purchasing.paloma-pf.com （ポータル https://portal.paloma-pf.com からSSOで起動）
+- ポータル側の登録: pf-portal（アプリキー `purchasing`）
+
 ## 開発
 
 ```bash
@@ -31,9 +36,9 @@ npm run dev   # http://localhost:5183
 | 変数 | 用途 |
 | --- | --- |
 | `DATABASE_URL` | Neon Postgres（購買単価専用DB） |
-| `NEXTAUTH_SECRET` / `NEXTAUTH_URL` | next-auth |
+| `NEXTAUTH_SECRET` / `NEXTAUTH_URL` | next-auth（本番は `https://purchasing.paloma-pf.com`） |
 | `PF_ADMIN_BOOTSTRAP_HASH` | 統一管理者（login_id=admin）の bcrypt ハッシュ（任意） |
-| `PF_PROVISION_KEY` | ポータルSSO・一括アカウント発行の共有キー（任意） |
+| `PF_PROVISION_KEY` | ポータルSSO・一括アカウント発行の共有キー（ポータルと同一値を設定） |
 | `ANTHROPIC_API_KEY` | 見積書AI取込（未設定時は該当機能のみ無効） |
 
 DBスキーマはアプリ起動時に冪等に自動作成されます（マイグレーション不要）。
