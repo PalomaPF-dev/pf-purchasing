@@ -32,6 +32,24 @@ import {
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
+ * Server Action の実行結果。
+ * Next.js の本番ビルドは Server Action で throw した例外のメッセージを
+ * クライアントに渡さない（汎用エラーに置き換わる）ため、
+ * 画面に理由を出したい操作は例外ではなく結果として返す。
+ */
+export type ActionResult<T = void> =
+  | { ok: true; data: T }
+  | { ok: false; message: string };
+
+async function run<T>(fn: () => Promise<T>): Promise<ActionResult<T>> {
+  try {
+    return { ok: true, data: await fn() };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "処理に失敗しました。" };
+  }
+}
+
+/**
  * 明細の取引先がログイン中ユーザーの担当かをサーバー側で検証する。
  * 一般（バイヤー）は担当外の取引先に申請できない（UIでも選べないが必ず防ぐ）。
  */
@@ -91,29 +109,42 @@ export async function updateRequestAction(payload: {
   revalidatePath(`/requests/${payload.requestId}`);
 }
 
-export async function submitRequestAction(requestId: string): Promise<void> {
-  const s = await requireSession();
-  await submitRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName });
-  revalidatePath("/requests");
-  revalidatePath(`/requests/${requestId}`);
+export async function submitRequestAction(requestId: string): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireSession();
+    await submitRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName });
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+    revalidatePath("/approvals");
+  });
 }
 
 /**
  * 申請の取り下げ（承認待ち → 下書き）。申請者本人と管理者のみ。
  * 下書きに戻るので、そのまま修正して再提出、または削除できる。
  */
-export async function withdrawRequestAction(requestId: string, reason: string): Promise<void> {
-  const s = await requireSession();
-  const detail = await getRequest(s.companyId, requestId);
-  if (!detail) throw new Error("申請が見つかりません。");
-  const mine = detail.request.applicantLoginId && detail.request.applicantLoginId === s.loginId;
-  if (!mine && s.role !== "admin") {
-    throw new Error("取り下げは申請者本人または管理者のみ実行できます。");
-  }
-  await withdrawRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, reason.trim() || null);
-  revalidatePath("/requests");
-  revalidatePath(`/requests/${requestId}`);
-  revalidatePath("/approvals");
+export async function withdrawRequestAction(
+  requestId: string,
+  reason: string
+): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireSession();
+    const detail = await getRequest(s.companyId, requestId);
+    if (!detail) throw new Error("申請が見つかりません。");
+    const mine = detail.request.applicantLoginId && detail.request.applicantLoginId === s.loginId;
+    if (!mine && s.role !== "admin") {
+      throw new Error("取り下げは申請者本人または管理者のみ実行できます。");
+    }
+    await withdrawRequest(
+      s.companyId,
+      requestId,
+      { loginId: s.loginId, name: s.userName },
+      reason.trim() || null
+    );
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+    revalidatePath("/approvals");
+  });
 }
 
 /**
@@ -124,17 +155,19 @@ export async function cancelApprovalAction(
   requestId: string,
   reason: string,
   force: boolean
-): Promise<{ removed: number; restored: number }> {
-  const s = await requireAdminSession();
-  const r = await cancelApproval(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, {
-    reason: reason.trim() || null,
-    force,
+): Promise<ActionResult<{ removed: number; restored: number }>> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    const r = await cancelApproval(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, {
+      reason: reason.trim() || null,
+      force,
+    });
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+    revalidatePath("/prices");
+    revalidatePath("/export");
+    return r;
   });
-  revalidatePath("/requests");
-  revalidatePath(`/requests/${requestId}`);
-  revalidatePath("/prices");
-  revalidatePath("/export");
-  return r;
 }
 
 export async function deleteRequestAction(requestId: string): Promise<void> {
@@ -149,18 +182,21 @@ export async function approveRequestAction(
   requestId: string,
   stage: ApprovalStage,
   comment: string
-): Promise<void> {
-  const s = await requireAdminSession();
-  await approveRequest(
-    s.companyId,
-    requestId,
-    stage,
-    { loginId: s.loginId, name: s.userName },
-    comment.trim() || null
-  );
-  revalidatePath("/requests");
-  revalidatePath(`/requests/${requestId}`);
-  revalidatePath("/prices");
+): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    await approveRequest(
+      s.companyId,
+      requestId,
+      stage,
+      { loginId: s.loginId, name: s.userName },
+      comment.trim() || null
+    );
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+    revalidatePath("/approvals");
+    revalidatePath("/prices");
+  });
 }
 
 /** 差し戻し（管理者のみ） */
@@ -168,17 +204,20 @@ export async function rejectRequestAction(
   requestId: string,
   stage: ApprovalStage,
   comment: string
-): Promise<void> {
-  const s = await requireAdminSession();
-  await rejectRequest(
-    s.companyId,
-    requestId,
-    stage,
-    { loginId: s.loginId, name: s.userName },
-    comment.trim() || null
-  );
-  revalidatePath("/requests");
-  revalidatePath(`/requests/${requestId}`);
+): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    await rejectRequest(
+      s.companyId,
+      requestId,
+      stage,
+      { loginId: s.loginId, name: s.userName },
+      comment.trim() || null
+    );
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+    revalidatePath("/approvals");
+  });
 }
 
 /**

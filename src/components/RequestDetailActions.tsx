@@ -23,7 +23,7 @@ export function SubmitDeleteActions({ requestId }: { requestId: string }) {
           setBusy(true);
           setError("");
           submitRequestAction(requestId)
-            .then(() => router.refresh())
+            .then((r) => (r.ok ? router.refresh() : setError(r.message)))
             .catch((e) => setError(e instanceof Error ? e.message : "提出に失敗しました"))
             .finally(() => setBusy(false));
         }}
@@ -70,7 +70,7 @@ export function WithdrawAction({ requestId }: { requestId: string }) {
           setBusy(true);
           setError("");
           withdrawRequestAction(requestId, reason)
-            .then(() => router.refresh())
+            .then((r) => (r.ok ? router.refresh() : setError(r.message)))
             .catch((e) => setError(e instanceof Error ? e.message : "取り下げに失敗しました"))
             .finally(() => setBusy(false));
         }}
@@ -121,7 +121,7 @@ export function CancelApprovalAction({
           setBusy(true);
           setError("");
           cancelApprovalAction(requestId, reason, force)
-            .then(() => router.refresh())
+            .then((r) => (r.ok ? router.refresh() : setError(r.message)))
             .catch((e) => setError(e instanceof Error ? e.message : "取り消しに失敗しました"))
             .finally(() => setBusy(false));
         }}

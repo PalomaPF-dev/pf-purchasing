@@ -2,7 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { getRequest, getWfSettings, listRequestFiles } from "@/lib/db";
+import {
+  assignedApprovers,
+  canApproveRequest,
+  getRequest,
+  getWfSettings,
+  listEmployees,
+  listRequestFiles,
+} from "@/lib/db";
 import { REQUEST_STATUS_LABEL, type PriceRequestLine } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
@@ -54,8 +61,22 @@ export default async function RequestDetailPage({
 
   const isAdmin = session.role === "admin";
   const editable = request.status === "draft" || request.status === "rejected";
+  const waiting = request.status === "pending" || request.status === "mgr_approved";
+  const currentStage = request.status === "pending" ? ("mgr" as const) : ("dept" as const);
+  // 申請者に承認担当者が割り当てられている場合、その人だけが承認・差し戻しできる
+  const assigned = waiting
+    ? await assignedApprovers(session.companyId, request.applicantLoginId)
+    : { mgr: null, dept: null };
   const approvable =
-    isAdmin && (request.status === "pending" || request.status === "mgr_approved");
+    isAdmin && waiting && canApproveRequest(wf, currentStage, session.loginId, assigned);
+  // 担当者が別にいる場合は、誰が承認するのかを表示する
+  const assignedTo = waiting ? (currentStage === "mgr" ? assigned.mgr : assigned.dept) : null;
+  const assignedName =
+    assignedTo && !approvable
+      ? (await listEmployees(session.companyId, { q: assignedTo })).find(
+          (e) => e.loginId === assignedTo
+        )?.name ?? null
+      : null;
   // 提出後の取り下げ（下書きに戻して修正・削除）は申請者本人と管理者
   const submitted = request.status === "pending" || request.status === "mgr_approved";
   const withdrawable =
@@ -65,7 +86,7 @@ export default async function RequestDetailPage({
   const totalQty = sumOf(lines, (l) => l.monthlyQty);
   const totalAmount = sumOf(lines, monthlyAmount);
   const totalImpact = sumOf(lines, impact);
-  const stage = request.status === "pending" ? ("mgr" as const) : ("dept" as const);
+  const stage = currentStage;
 
   const statusColor =
     request.status === "approved"
@@ -157,6 +178,17 @@ export default async function RequestDetailPage({
             stage={stage}
             stageLabel={stage === "mgr" ? wf.mgrLabel : wf.deptLabel}
           />
+        </div>
+      )}
+      {/* 承認担当が別の人の場合は、その旨を表示する */}
+      {waiting && !approvable && assignedTo && (
+        <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#555555]">
+          この申請の{currentStage === "mgr" ? wf.mgrLabel : wf.deptLabel}承認は{" "}
+          <span className="font-medium">
+            {assignedName || assignedTo}
+            {assignedName && <span className="ml-1 font-mono text-xs text-[#909090]">（{assignedTo}）</span>}
+          </span>{" "}
+          が担当です。
         </div>
       )}
       {editable && (

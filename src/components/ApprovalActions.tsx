@@ -32,10 +32,13 @@ export default function ApprovalActions({
     setError("");
     setBusy(action);
     try {
-      if (action === "approve") {
-        await approveRequestAction(requestId, stage, comment);
-      } else {
-        await rejectRequestAction(requestId, stage, comment);
+      const res =
+        action === "approve"
+          ? await approveRequestAction(requestId, stage, comment)
+          : await rejectRequestAction(requestId, stage, comment);
+      if (!res.ok) {
+        setError(res.message);
+        return;
       }
       router.refresh();
     } catch (e) {
