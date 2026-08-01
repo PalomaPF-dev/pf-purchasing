@@ -51,7 +51,8 @@ export async function requireAdminSession(): Promise<AppSession> {
 export async function requireAdminPage(): Promise<AppSession> {
   const s = await requireSession();
   if (s.role !== "admin") {
-    redirect("/");
+    // 無言で戻すと理由が分からないため、ダッシュボードで案内を表示する
+    redirect("/?forbidden=1");
   }
   return s;
 }

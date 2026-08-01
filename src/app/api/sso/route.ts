@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 import { encode } from "next-auth/jwt";
 import {
+  countAllAdmins,
   createInvitedUser,
   ensureAuthSchema,
   getOrCreateCompanyByName,
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
   }
 
   // ペイロード検証（loginId / app / exp。exp は epoch ms、発行から60秒有効）
-  let data: { loginId?: unknown; app?: unknown; exp?: unknown };
+  let data: { loginId?: unknown; name?: unknown; role?: unknown; app?: unknown; exp?: unknown };
   try {
     data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
   } catch {
@@ -74,6 +75,10 @@ export async function GET(req: NextRequest) {
   if (typeof data.exp !== "number" || !(data.exp > Date.now())) {
     return ssoFail(req, "トークン期限切れ（サーバー時刻のずれの可能性）");
   }
+  // ポータル上の権限・氏名（新しいポータルのみ送信。無い場合は null＝アプリ側の値を維持）
+  let portalRole: "admin" | "member" | null =
+    data.role === "admin" ? "admin" : data.role === "member" ? "member" : null;
+  const portalName = typeof data.name === "string" && data.name.trim() ? data.name.trim() : null;
 
   try {
     // authorize と同様、スキーマを冪等に整えてから検索する（一時失敗では止めない）
@@ -83,8 +88,17 @@ export async function GET(req: NextRequest) {
       /* noop */
     }
 
-    // 社員番号（login_id）でユーザー特定。pending でもログイン可（パスワードは触らない）。
     const sql = getSql();
+
+    // 初期セットアップのブートストラップ:
+    // アプリに管理者が1人も居ない場合は、最初にSSOで入ったユーザーを管理者にする
+    // （/register で最初の管理者を作るのと同じ扱い）。マスタ登録・データ移行を開始できるようにする。
+    if (portalRole !== "admin" && (await countAllAdmins()) === 0) {
+      console.warn("[sso] 管理者が未登録のため、最初のSSOユーザーを管理者にします:", loginId);
+      portalRole = "admin";
+    }
+
+    // 社員番号（login_id）でユーザー特定。pending でもログイン可（パスワードは触らない）。
     const findUser = () => sql`
       SELECT u.id, u.login_id, u.email, u.name, u.role,
              c.id AS company_id, c.name AS company_name
@@ -101,8 +115,22 @@ export async function GET(req: NextRequest) {
       // 氏名・役割はポータルの一括発行（/api/provision）で後から正となる値に更新される。
       console.warn("[sso] user not found, auto-provisioning:", loginId);
       const companyId = await getOrCreateCompanyByName(PROVISION_COMPANY_NAME);
-      await createInvitedUser(companyId, loginId, loginId, "member");
+      await createInvitedUser(
+        companyId,
+        loginId,
+        portalName ?? loginId,
+        portalRole ?? "member"
+      );
       rows = await findUser();
+    } else if (portalRole || portalName) {
+      // ポータル側で権限・氏名が変更された場合に追随する（ポータルが常に正）
+      const cur = rows[0];
+      const nextRole = portalRole ?? (cur.role as string);
+      const nextName = portalName ?? (cur.name as string);
+      if (nextRole !== cur.role || nextName !== cur.name) {
+        await sql`UPDATE users SET role = ${nextRole}, name = ${nextName} WHERE id = ${cur.id}`;
+        rows = await findUser();
+      }
     }
     const user = rows[0];
     if (!user) {
