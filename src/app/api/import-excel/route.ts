@@ -29,7 +29,7 @@ export const maxDuration = 120;
 const PRICE_HEADERS = [
   "品目CD", "枝番", "品名", "取引先CD", "取引先名", "納入場所CD", "納入場所名",
   "納品先CD", "納品先名", "単位CD", "ロット数", "通貨", "適用開始日", "適用終了日",
-  "現行単価", "購入単価", "有償支給価格",
+  "現行単価", "購入単価", "有償支給価格", "月当たり数量",
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
 const ITEM_HEADERS = [
@@ -420,6 +420,7 @@ export async function POST(req: Request) {
           currentPrice: toNum(get(r, "現行単価")),
           newPrice,
           paidSupplyPrice: toNum(get(r, "有償支給価格")),
+          monthlyQty: toNum(get(r, "月当たり数量", "月数量")),
           bdSupplyMat: toNum(get(r, "支給材建値")),
           bdMaterial: toNum(get(r, "材料建値")),
           bdRevision: toNum(get(r, "単価改定")),

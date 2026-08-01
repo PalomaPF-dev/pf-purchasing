@@ -72,6 +72,7 @@ function mapLine(r: any): PriceRequestLine {
     currentPrice: num(r.current_price),
     newPrice: Number(r.new_price),
     paidSupplyPrice: num(r.paid_supply_price),
+    monthlyQty: num(r.monthly_qty),
     bdSupplyMat: num(r.bd_supply_mat),
     bdMaterial: num(r.bd_material),
     bdRevision: num(r.bd_revision),
@@ -104,6 +105,7 @@ function mapHistory(r: any): PriceHistoryRow {
     price: Number(r.price),
     priceBefore: num(r.price_before),
     taxCd: r.tax_cd ?? null,
+    monthlyQty: num(r.monthly_qty),
     reason: r.reason ?? null,
     bdSupplyMat: num(r.bd_supply_mat),
     bdMaterial: num(r.bd_material),
@@ -321,6 +323,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       current_price: l.currentPrice ?? null,
       new_price: l.newPrice,
       paid_supply_price: l.paidSupplyPrice ?? null,
+      monthly_qty: l.monthlyQty ?? null,
       bd_supply_mat: l.bdSupplyMat ?? null,
       bd_material: l.bdMaterial ?? null,
       bd_revision: l.bdRevision ?? null,
@@ -337,14 +340,14 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       company_id, request_id, seq, item_cd, item_branch, item_name,
       supplier_cd, supplier_name, loc_cd, loc_name, dlv_cd, dlv_name,
       unit_cd, lot_qty, currency, start_date, end_date,
-      current_price, new_price, paid_supply_price,
+      current_price, new_price, paid_supply_price, monthly_qty,
       bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
       reason_note, tax_cd, wg_cd
     )
     SELECT ${companyId}::uuid, ${requestId}::uuid, x.seq, x.item_cd, x.item_branch, x.item_name,
            x.supplier_cd, x.supplier_name, x.loc_cd, x.loc_name, x.dlv_cd, x.dlv_name,
            x.unit_cd, x.lot_qty, x.currency, x.start_date::date, x.end_date::date,
-           x.current_price, x.new_price, x.paid_supply_price,
+           x.current_price, x.new_price, x.paid_supply_price, x.monthly_qty,
            x.bd_supply_mat, x.bd_material, x.bd_revision, x.bd_design, x.bd_forex, x.bd_other,
            x.reason_note, x.tax_cd, x.wg_cd
     FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) AS x(
@@ -352,6 +355,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       supplier_cd text, supplier_name text, loc_cd text, loc_name text, dlv_cd text, dlv_name text,
       unit_cd text, lot_qty double precision, currency text, start_date text, end_date text,
       current_price double precision, new_price double precision, paid_supply_price double precision,
+      monthly_qty double precision,
       bd_supply_mat double precision, bd_material double precision, bd_revision double precision,
       bd_design double precision, bd_forex double precision, bd_other double precision,
       reason_note text, tax_cd text, wg_cd text
@@ -624,14 +628,14 @@ async function applyApprovedToHistory(companyId: string, requestId: string): Pro
       INSERT INTO price_history (
         company_id, item_cd, item_branch, item_name, supplier_cd, supplier_name,
         unit_cd, lot_qty, currency, loc_cd, dlv_cd, wg_cd,
-        start_date, end_date, price, price_before, tax_cd, reason, source, request_line_id,
+        start_date, end_date, price, price_before, tax_cd, monthly_qty, reason, source, request_line_id,
         bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
         req_no, applicant_name, approved_at
       ) VALUES (
         ${companyId}, ${l.item_cd}, ${l.item_branch}, ${l.item_name}, ${l.supplier_cd}, ${l.supplier_name},
         ${l.unit_cd}, ${l.lot_qty}, ${l.currency}, ${l.loc_cd}, ${l.dlv_cd}, ${l.wg_cd},
         ${l.start_date}, ${l.end_date}, ${l.new_price}, ${l.current_price}, ${l.tax_cd},
-        ${l.reason_note}, 'approval', ${l.id},
+        ${l.monthly_qty}, ${l.reason_note}, 'approval', ${l.id},
         ${l.bd_supply_mat}, ${l.bd_material}, ${l.bd_revision}, ${l.bd_design}, ${l.bd_forex}, ${l.bd_other},
         ${reqNo}, ${applicantName}, NOW()
       )`;
@@ -681,7 +685,8 @@ export async function getWfSettings(companyId: string): Promise<WfSettings> {
   const r = (rows as any[])[0];
   if (!r) return { ...WF_DEFAULT };
   return {
-    stages: Number(r.stages) === 1 ? 1 : 2,
+    // 承認は MGR → 部門長 の2段階固定（過去に1段階で保存されていても2として扱う）
+    stages: 2,
     mgrApprovers: Array.isArray(r.mgr_approvers) ? r.mgr_approvers : [],
     deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
     mgrLabel: r.mgr_label || "MGR",

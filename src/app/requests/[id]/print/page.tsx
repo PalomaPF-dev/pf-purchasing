@@ -5,8 +5,21 @@ import { requireSession } from "@/lib/session";
 import { getRequest, getWfSettings } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
+import type { PriceRequestLine } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/** 単価改訂の月当たり影響額（単価差 × 月当たり数量）。数量・旧単価が無ければ null */
+function impact(l: PriceRequestLine): number | null {
+  if (l.monthlyQty == null || l.currentPrice == null) return null;
+  return Math.round(l.monthlyQty * (l.newPrice - l.currentPrice) * 100) / 100;
+}
+
+function sumOf(lines: PriceRequestLine[], f: (l: PriceRequestLine) => number | null): number | null {
+  const vals = lines.map(f).filter((v): v is number => v != null);
+  if (vals.length === 0) return null;
+  return Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100;
+}
 
 /**
  * 単価申請書（登録品単価連絡書）。A4横・PDF保存用。
@@ -33,6 +46,9 @@ export default async function RequestPrintPage({
   // 取引先は明細の先頭を代表として見出しに出す（複数取引先が混在する場合は各行にも表示される）
   const head = lines[0];
   const multiSupplier = lines.some((l) => l.supplierCd !== head?.supplierCd);
+  // 単価改訂の影響額（月当たり）。数量が入っている明細だけを合計する
+  const totalQty = sumOf(lines, (l) => l.monthlyQty);
+  const totalImpact = sumOf(lines, impact);
 
   return (
     <div className="min-h-screen bg-white">
@@ -117,7 +133,8 @@ export default async function RequestPrintPage({
               <th className={`${thNew} w-[19%]`} colSpan={4}>新 単 価</th>
               <th className={`${thOld} w-[11%]`} colSpan={3}>旧 単 価</th>
               <th className={`${thBd} w-[24%]`} colSpan={6}>単 価 差 の 内 訳</th>
-              <th className={`${th} w-[15%]`} rowSpan={2}>備考（改訂理由）</th>
+              <th className={`${thQty} w-[10%]`} colSpan={2}>月 当 た り</th>
+              <th className={`${th} w-[13%]`} rowSpan={2}>備考（改訂理由）</th>
             </tr>
             <tr>
               <th className={thNew}>適用日</th>
@@ -133,6 +150,8 @@ export default async function RequestPrintPage({
               <th className={thBd}>設計変更</th>
               <th className={thBd}>為替変動</th>
               <th className={thBd}>その他</th>
+              <th className={thQty}>数量</th>
+              <th className={thQty}>改訂影響額</th>
             </tr>
           </thead>
           <tbody>
@@ -174,6 +193,12 @@ export default async function RequestPrintPage({
                   <td className={`${tdBd} text-right`}>{blank(l.bdForex)}</td>
                   <td className={`${tdBd} text-right`}>{blank(l.bdOther)}</td>
 
+                  {/* 月当たり数量と単価改訂の影響額 */}
+                  <td className={`${tdQty} text-right`}>{blank(l.monthlyQty)}</td>
+                  <td className={`${tdQty} text-right font-bold`}>
+                    {impact(l) == null ? "" : (impact(l) as number).toLocaleString()}
+                  </td>
+
                   <td className={`${td} text-[9px] leading-tight`}>
                     {isNew ? "新規登録" : ""}
                     {l.reasonNote ? (isNew ? " / " : "") + l.reasonNote : ""}
@@ -182,6 +207,20 @@ export default async function RequestPrintPage({
               );
             })}
           </tbody>
+          {totalImpact != null && (
+            <tfoot>
+              <tr>
+                <td className={`${td} text-right font-bold`} colSpan={16}>
+                  月当たり合計
+                </td>
+                <td className={`${tdQty} text-right`}>{blank(totalQty)}</td>
+                <td className={`${tdQty} text-right font-bold`}>{totalImpact.toLocaleString()}</td>
+                <td className={`${td} text-[9px]`}>
+                  年換算 {(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}
+                </td>
+              </tr>
+            </tfoot>
+          )}
         </table>
 
         <div className="mt-3 text-[10px] text-slate-500">
@@ -200,6 +239,9 @@ const thNew =
   "print-keep-bg border border-slate-500 bg-rose-50 px-1 py-1 text-center text-[9px] font-bold text-rose-800";
 const thOld =
   "print-keep-bg border border-slate-500 bg-slate-50 px-1 py-1 text-center text-[9px] font-bold text-slate-600";
+const thQty =
+  "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
+const tdQty = "print-keep-bg border border-slate-400 bg-amber-50/50 px-1 py-1 text-[10px]";
 const thBd =
   "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
 const td = "border border-slate-400 px-1.5 py-1 text-[10px] align-top";

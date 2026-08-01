@@ -55,6 +55,7 @@ export interface PriceRequestLine {
   currentPrice: number | null; // 現行単価
   newPrice: number; // 購入単価
   paidSupplyPrice: number | null; // 有償支給価格
+  monthlyQty: number | null; // 月当たり数量（単価改訂の影響額計算用）
   bdSupplyMat: number | null; // 支給材建値
   bdMaterial: number | null; // 材料建値
   bdRevision: number | null; // 単価改定
@@ -86,6 +87,7 @@ export interface LineInput {
   currentPrice?: number | null;
   newPrice: number;
   paidSupplyPrice?: number | null;
+  monthlyQty?: number | null;
   bdSupplyMat?: number | null;
   bdMaterial?: number | null;
   bdRevision?: number | null;
@@ -137,6 +139,8 @@ export interface PriceHistoryRow {
   price: number;
   priceBefore: number | null;
   taxCd: string | null;
+  /** 月当たり数量（単価改訂の影響額計算用） */
+  monthlyQty: number | null;
   /** 備考（改訂理由の記述） */
   reason: string | null;
   /** 単価差の要因（改訂理由別の内訳）。移行データは null */

@@ -6,18 +6,28 @@ import { CheckCircle2, Loader2, Save } from "lucide-react";
 import { saveWfSettingsAction } from "@/lib/actions";
 import type { WfSettings } from "@/lib/db";
 
+export interface ApproverInfo {
+  loginId: string;
+  name: string;
+}
+
 /**
  * 承認ワークフロー設定（管理者）。
- * 承認段階数・各段階の承認者・段階名称を変更できる。
- * 承認者を空にすると、その段階は全管理者が承認できる（既定の運用）。
+ * 承認は「MGR承認 → 部門長承認」の2段階固定。
+ * 承認者は社員マスタ（ユーザー登録）の「承認W/F」で指定するため、ここでは名称のみ設定する。
  */
-export default function WfSettingsForm({ initial }: { initial: WfSettings }) {
+export default function WfSettingsForm({
+  initial,
+  mgrApprovers,
+  deptApprovers,
+}: {
+  initial: WfSettings;
+  mgrApprovers: ApproverInfo[];
+  deptApprovers: ApproverInfo[];
+}) {
   const router = useRouter();
-  const [stages, setStages] = useState<1 | 2>(initial.stages);
   const [mgrLabel, setMgrLabel] = useState(initial.mgrLabel);
   const [deptLabel, setDeptLabel] = useState(initial.deptLabel);
-  const [mgrApprovers, setMgrApprovers] = useState(initial.mgrApprovers.join(", "));
-  const [deptApprovers, setDeptApprovers] = useState(initial.deptApprovers.join(", "));
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -26,7 +36,14 @@ export default function WfSettingsForm({ initial }: { initial: WfSettings }) {
     setBusy(true);
     setSaved(false);
     setError("");
-    saveWfSettingsAction({ stages, mgrApprovers, deptApprovers, mgrLabel, deptLabel })
+    // 承認者は社員マスタ側で管理するため、ここでは現在の指定をそのまま維持する
+    saveWfSettingsAction({
+      stages: 2,
+      mgrApprovers: initial.mgrApprovers.join(", "),
+      deptApprovers: initial.deptApprovers.join(", "),
+      mgrLabel,
+      deptLabel,
+    })
       .then(() => {
         setSaved(true);
         router.refresh();
@@ -41,36 +58,13 @@ export default function WfSettingsForm({ initial }: { initial: WfSettings }) {
 
   return (
     <div className="space-y-4">
-      {/* 承認段階 */}
+      {/* 承認段階（2段階固定） */}
       <section className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-3 text-sm font-bold text-[#333333]">承認段階</h2>
-        <div className="space-y-2">
-          {(
-            [
-              [2, `2段階（${mgrLabel || "MGR"}承認 → ${deptLabel || "部門長"}承認）`, "現行の運用。部門長承認で単価履歴に反映されます。"],
-              [1, `1段階（${mgrLabel || "MGR"}承認のみ）`, "承認が1回で完了し、そのまま単価履歴に反映されます。"],
-            ] as const
-          ).map(([v, title, note]) => (
-            <label
-              key={v}
-              className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${
-                stages === v ? "border-[#e11d48] bg-[#fff1f2]" : "border-[#e5e5e5] hover:bg-[#f7f7f5]"
-              }`}
-            >
-              <input
-                type="radio"
-                name="stages"
-                checked={stages === v}
-                onChange={() => setStages(v)}
-                className="mt-0.5 h-4 w-4 accent-[#e11d48]"
-              />
-              <span>
-                <span className="block text-sm font-medium text-[#333333]">{title}</span>
-                <span className="block text-xs text-[#707070]">{note}</span>
-              </span>
-            </label>
-          ))}
-        </div>
+        <h2 className="mb-1 text-sm font-bold text-[#333333]">承認段階</h2>
+        <p className="text-sm text-[#555555]">
+          すべての単価申請は <span className="font-medium">{mgrLabel || "MGR"}承認 → {deptLabel || "部門長"}承認</span> の2段階です。
+          {deptLabel || "部門長"}承認が完了すると単価履歴に反映されます。
+        </p>
       </section>
 
       {/* 段階名称 */}
@@ -91,40 +85,22 @@ export default function WfSettingsForm({ initial }: { initial: WfSettings }) {
               value={deptLabel}
               onChange={(e) => setDeptLabel(e.target.value)}
               placeholder="部門長"
-              disabled={stages === 1}
             />
           </div>
         </div>
       </section>
 
-      {/* 承認者 */}
+      {/* 承認者（社員マスタで指定） */}
       <section className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-1 text-sm font-bold text-[#333333]">承認者の指定</h2>
+        <h2 className="mb-1 text-sm font-bold text-[#333333]">承認者</h2>
         <p className="mb-3 text-xs text-[#707070]">
-          社員番号をカンマ区切りで入力します（例: 12345, 67890）。
-          <span className="font-medium">空欄にすると、その段階はすべての管理者が承認できます。</span>
-          指定した場合、その社員番号の管理者だけが承認・差し戻しできます。
+          承認者は「設定 → ユーザー登録」の各社員の<span className="font-medium">「承認W/F」</span>で指定します。
+          変更したら「社員マスタからユーザーを登録 / 更新」を押すと、この一覧に反映されます。
+          どちらも未指定の場合は、すべての管理者が承認できます。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <label className={label}>{mgrLabel || "MGR"}承認の承認者</label>
-            <input
-              className={`${input} font-mono`}
-              value={mgrApprovers}
-              onChange={(e) => setMgrApprovers(e.target.value)}
-              placeholder="空欄＝全管理者"
-            />
-          </div>
-          <div>
-            <label className={label}>{deptLabel || "部門長"}承認の承認者</label>
-            <input
-              className={`${input} font-mono`}
-              value={deptApprovers}
-              onChange={(e) => setDeptApprovers(e.target.value)}
-              placeholder="空欄＝全管理者"
-              disabled={stages === 1}
-            />
-          </div>
+          <ApproverList title={`${mgrLabel || "MGR"}承認`} list={mgrApprovers} />
+          <ApproverList title={`${deptLabel || "部門長"}承認`} list={deptApprovers} />
         </div>
       </section>
 
@@ -148,6 +124,26 @@ export default function WfSettingsForm({ initial }: { initial: WfSettings }) {
         {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
         設定を保存
       </button>
+    </div>
+  );
+}
+
+function ApproverList({ title, list }: { title: string; list: ApproverInfo[] }) {
+  return (
+    <div className="rounded-lg border border-[#e5e5e5] p-3">
+      <div className="mb-1.5 text-sm font-medium text-[#333333]">{title}</div>
+      {list.length === 0 ? (
+        <div className="text-xs text-[#a0a0a0]">未指定（すべての管理者が承認できます）</div>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {list.map((a) => (
+            <li key={a.loginId}>
+              {a.name || "（氏名未登録）"}
+              <span className="ml-1 font-mono text-xs text-[#909090]">（{a.loginId}）</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

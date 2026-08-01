@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { getRequest, getWfSettings, listRequestFiles } from "@/lib/db";
-import { REQUEST_STATUS_LABEL } from "@/lib/types";
+import { REQUEST_STATUS_LABEL, type PriceRequestLine } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ApprovalActions from "@/components/ApprovalActions";
@@ -16,6 +16,25 @@ import {
 import RequestFiles from "@/components/RequestFiles";
 
 export const dynamic = "force-dynamic";
+
+/** 月当たり金額（新単価 × 月当たり数量）。数量未入力なら null */
+function monthlyAmount(l: PriceRequestLine): number | null {
+  if (l.monthlyQty == null) return null;
+  return Math.round(l.monthlyQty * l.newPrice * 100) / 100;
+}
+
+/** 単価改訂の月当たり影響額（単価差 × 月当たり数量）。数量・旧単価が無ければ null */
+function impact(l: PriceRequestLine): number | null {
+  if (l.monthlyQty == null || l.currentPrice == null) return null;
+  return Math.round(l.monthlyQty * (l.newPrice - l.currentPrice) * 100) / 100;
+}
+
+/** null を除いた合計。対象がなければ null */
+function sumOf(lines: PriceRequestLine[], f: (l: PriceRequestLine) => number | null): number | null {
+  const vals = lines.map(f).filter((v): v is number => v != null);
+  if (vals.length === 0) return null;
+  return Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100;
+}
 
 /** 単価申請の詳細（明細・承認状況・スレッド・操作） */
 export default async function RequestDetailPage({
@@ -42,6 +61,10 @@ export default async function RequestDetailPage({
   const withdrawable =
     submitted && (isAdmin || (!!request.applicantLoginId && request.applicantLoginId === session.loginId));
   const exportedCount = lines.filter((l) => l.exportedAt).length;
+  // 単価改訂の影響額（月当たり）。数量が入っている明細だけを合計する
+  const totalQty = sumOf(lines, (l) => l.monthlyQty);
+  const totalAmount = sumOf(lines, monthlyAmount);
+  const totalImpact = sumOf(lines, impact);
   const stage = request.status === "pending" ? ("mgr" as const) : ("dept" as const);
 
   const statusColor =
@@ -166,7 +189,11 @@ export default async function RequestDetailPage({
               <th className="border-l border-[#eeeeee] bg-slate-50 px-2 py-1.5 font-bold text-slate-600" colSpan={2}>
                 旧 単 価
               </th>
-              <th className="border-l border-[#eeeeee] px-2 py-1.5" colSpan={2}></th>
+              <th className="border-l border-[#eeeeee] px-2 py-1.5"></th>
+              <th className="border-l border-[#eeeeee] bg-amber-50 px-2 py-1.5 font-bold text-amber-800" colSpan={3}>
+                月当たり（改訂影響額）
+              </th>
+              <th className="border-l border-[#eeeeee] px-2 py-1.5"></th>
             </tr>
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
               <th className="px-3 py-2.5 font-medium">#</th>
@@ -179,7 +206,10 @@ export default async function RequestDetailPage({
               <th className="border-l border-[#eeeeee] bg-slate-50/60 px-2 py-2.5 font-medium">取消日</th>
               <th className="bg-slate-50/60 px-2 py-2.5 text-right font-medium">単価</th>
               <th className="border-l border-[#eeeeee] px-2 py-2.5 text-right font-medium">単価差</th>
-              <th className="px-2 py-2.5 font-medium">備考（理由）</th>
+              <th className="border-l border-[#eeeeee] bg-amber-50/40 px-2 py-2.5 text-right font-medium">数量</th>
+              <th className="bg-amber-50/40 px-2 py-2.5 text-right font-medium">金額</th>
+              <th className="bg-amber-50/40 px-2 py-2.5 text-right font-medium">影響額</th>
+              <th className="border-l border-[#eeeeee] px-2 py-2.5 font-medium">備考（理由）</th>
             </tr>
           </thead>
           <tbody>
@@ -230,11 +260,59 @@ export default async function RequestDetailPage({
                   >
                     {formatDiff(diff)}
                   </td>
-                  <td className="px-2 py-2.5 text-xs">{l.reasonNote ?? "—"}</td>
+                  {/* 月当たり数量・金額と単価改訂の影響額 */}
+                  <td className="border-l border-[#f0f0f0] bg-amber-50/40 px-2 py-2.5 text-right font-mono text-xs">
+                    {l.monthlyQty != null ? l.monthlyQty.toLocaleString() : "—"}
+                  </td>
+                  <td className="bg-amber-50/40 px-2 py-2.5 text-right font-mono text-xs">
+                    {monthlyAmount(l) != null ? (monthlyAmount(l) as number).toLocaleString() : "—"}
+                  </td>
+                  <td
+                    className={`bg-amber-50/40 px-2 py-2.5 text-right font-mono font-bold ${
+                      impact(l) != null && (impact(l) as number) > 0
+                        ? "text-red-600"
+                        : impact(l) != null && (impact(l) as number) < 0
+                          ? "text-emerald-600"
+                          : ""
+                    }`}
+                  >
+                    {impact(l) != null ? formatDiff(impact(l)) : "—"}
+                  </td>
+                  <td className="border-l border-[#f0f0f0] px-2 py-2.5 text-xs">{l.reasonNote ?? "—"}</td>
                 </tr>
               );
             })}
           </tbody>
+          {/* 合計（月当たりの改訂影響額） */}
+          <tfoot>
+            <tr className="border-t-2 border-[#e5e5e5] bg-[#fafafa] text-sm font-bold">
+              <td className="px-3 py-2.5 text-right text-xs text-[#707070]" colSpan={10}>
+                合計（月当たり）
+              </td>
+              <td className="border-l border-[#f0f0f0] bg-amber-50/60 px-2 py-2.5 text-right font-mono text-xs">
+                {totalQty != null ? totalQty.toLocaleString() : "—"}
+              </td>
+              <td className="bg-amber-50/60 px-2 py-2.5 text-right font-mono text-xs">
+                {totalAmount != null ? totalAmount.toLocaleString() : "—"}
+              </td>
+              <td
+                className={`bg-amber-50/60 px-2 py-2.5 text-right font-mono ${
+                  totalImpact != null && totalImpact > 0
+                    ? "text-red-600"
+                    : totalImpact != null && totalImpact < 0
+                      ? "text-emerald-600"
+                      : ""
+                }`}
+              >
+                {totalImpact != null ? formatDiff(totalImpact) : "—"}
+              </td>
+              <td className="border-l border-[#f0f0f0] px-2 py-2.5 text-xs font-normal text-[#707070]">
+                {totalImpact != null
+                  ? `年換算 ${formatDiff(Math.round(totalImpact * 12 * 100) / 100)}`
+                  : ""}
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
