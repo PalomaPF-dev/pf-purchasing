@@ -1959,6 +1959,23 @@ export async function deleteEmployee(companyId: string, id: string): Promise<voi
   await refreshApproversFromEmployees(companyId);
 }
 
+/** 品目CD → 品名の対応表（帳票で品名が空のときの補完に使う） */
+export async function itemNameMap(
+  companyId: string,
+  codes: string[]
+): Promise<Map<string, string>> {
+  const list = [...new Set(codes.filter(Boolean))];
+  const m = new Map<string, string>();
+  if (list.length === 0) return m;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT code, name FROM items
+    WHERE company_id = ${companyId} AND code = ANY(${list}::text[]) AND name <> ''`) as any[];
+  for (const r of rows) m.set(r.code, r.name);
+  return m;
+}
+
 /** 氏名 → 社員番号の対応表（担当窓口の名寄せに使う） */
 export async function employeeNameMap(companyId: string): Promise<Map<string, string>> {
   await ensureSchema();
