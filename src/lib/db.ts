@@ -323,7 +323,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
       reason_note, tax_cd, wg_cd
     )
-    SELECT ${companyId}, ${requestId}, x.seq, x.item_cd, x.item_branch, x.item_name,
+    SELECT ${companyId}::uuid, ${requestId}::uuid, x.seq, x.item_cd, x.item_branch, x.item_name,
            x.supplier_cd, x.supplier_name, x.loc_cd, x.loc_name, x.dlv_cd, x.dlv_name,
            x.unit_cd, x.lot_qty, x.currency, x.start_date::date, x.end_date::date,
            x.current_price, x.new_price, x.paid_supply_price,
@@ -861,7 +861,7 @@ export async function insertHistoryBatch(companyId: string, rows: MigrationRow[]
       loc_cd, dlv_cd, wg_cd, start_date, end_date, price, price_before,
       memo1, memo2, memo3, source
     )
-    SELECT ${companyId}, x.item_cd, x.item_branch, x.supplier_cd, x.unit_cd, x.lot_qty, x.currency,
+    SELECT ${companyId}::uuid, x.item_cd, x.item_branch, x.supplier_cd, x.unit_cd, x.lot_qty, x.currency,
            x.loc_cd, x.dlv_cd, x.wg_cd, x.start_date::date, x.end_date::date, x.price, x.price_before,
            x.memo1, x.memo2, x.memo3, 'migration'
     FROM ${recordset}
@@ -880,12 +880,12 @@ export async function insertHistoryBatch(companyId: string, rows: MigrationRow[]
   // マスタのスタブを upsert（名称は空。後からマスタ取込・編集で補完）
   await sql`
     INSERT INTO items (company_id, code, branch, name)
-    SELECT DISTINCT ${companyId}, x.item_cd, COALESCE(x.item_branch, '*'), ''
+    SELECT DISTINCT ${companyId}::uuid, x.item_cd, COALESCE(x.item_branch, '*'), ''
     FROM ${recordset}
     ON CONFLICT (company_id, code, branch) DO NOTHING`;
   await sql`
     INSERT INTO suppliers (company_id, code, name)
-    SELECT DISTINCT ${companyId}, x.supplier_cd, ''
+    SELECT DISTINCT ${companyId}::uuid, x.supplier_cd, ''
     FROM ${recordset}
     ON CONFLICT (company_id, code) DO NOTHING`;
   return (inserted as any[]).length;
