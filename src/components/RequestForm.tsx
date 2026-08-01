@@ -1,10 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileUp, Plus, Search, Trash2 } from "lucide-react";
+import {
+  FileSpreadsheet,
+  Keyboard,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { createRequestAction, updateRequestAction } from "@/lib/actions";
 import QuoteImport, { type QuoteAppliedLine } from "@/components/QuoteImport";
+import BulkLinesImport from "@/components/BulkLinesImport";
 import SupplierPicker, { type PickedSupplier } from "@/components/SupplierPicker";
 import ItemPicker, { type PickedItem } from "@/components/ItemPicker";
 import type { LineInput, PriceRequestLine } from "@/lib/types";
@@ -150,6 +159,14 @@ function diffOf(l: FormLine): number | null {
   return Math.round((nw - cur) * 10000) / 10000;
 }
 
+/** 入力方法のタブ */
+type Tab = "manual" | "quote" | "bulk";
+
+/** 明細が「空の1行だけ」か（取り込み結果で置き換えてよいか）の判定 */
+function isBlank(lines: FormLine[]): boolean {
+  return lines.length === 1 && !lines[0].itemCd && !lines[0].newPrice;
+}
+
 /** 内訳合計 */
 function bdSum(l: FormLine): number | null {
   const vals = [l.bdSupplyMat, l.bdMaterial, l.bdRevision, l.bdDesign, l.bdForex, l.bdOther]
@@ -185,8 +202,10 @@ export default function RequestForm({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<"none" | "draft" | "submit">("none");
-  // 見積書取り込みパネルの開閉（新規作成時は既定で開く）
-  const [showQuoteImport, setShowQuoteImport] = useState(!requestId);
+  // 入力方法のタブ（手入力／見積書から取り込み／Excel・CSVで一括入力）
+  const [tab, setTab] = useState<Tab>("manual");
+  // 単価差の内訳を展開している明細行
+  const [openRows, setOpenRows] = useState<Set<number>>(new Set());
   // 発注先（申請の対象）。編集時は既存明細から復元する
   const [supplier, setSupplier] = useState<PickedSupplier | null>(() => {
     const first = initialLines?.[0];
@@ -271,12 +290,8 @@ export default function RequestForm({
       reasonNote: a.reasonNote,
     }));
     // 既存が空1行だけなら置き換え、そうでなければ追記
-    setLines((prev) => {
-      const isEmpty =
-        prev.length === 1 && !prev[0].itemCd && !prev[0].newPrice && !prev[0].supplierCd;
-      return isEmpty ? newLines : [...prev, ...newLines];
-    });
-    setShowQuoteImport(false);
+    setLines((prev) => (isBlank(prev) ? newLines : [...prev, ...newLines]));
+    setTab("manual");
   }
 
   async function save(submit: boolean) {
@@ -331,6 +346,53 @@ export default function RequestForm({
     "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
   const labelCls = "block text-[11px] font-medium text-[#707070] mb-0.5";
 
+
+  /** 一括入力（Excel/CSV）で解析した明細を追加 */
+  function applyBulkLines(bulk: LineInput[]) {
+    if (bulk.length === 0) return;
+    const newLines: FormLine[] = bulk.map((b) => ({
+      ...emptyLine(b.startDate || today),
+      itemCd: b.itemCd,
+      itemBranch: b.itemBranch ?? "",
+      itemName: b.itemName ?? "",
+      supplierCd: supplier?.code ?? b.supplierCd ?? "",
+      supplierName: supplier?.name ?? b.supplierName ?? "",
+      locCd: b.locCd ?? "",
+      locName: b.locName ?? "",
+      dlvCd: b.dlvCd ?? "",
+      dlvName: b.dlvName ?? "",
+      unitCd: b.unitCd ?? "",
+      lotQty: b.lotQty != null ? String(b.lotQty) : "",
+      currency: b.currency ?? "JPY",
+      startDate: b.startDate || today,
+      endDate: b.endDate ?? "2099-12-31",
+      currentPrice: b.currentPrice != null ? String(b.currentPrice) : "",
+      newPrice: Number.isFinite(b.newPrice) ? String(b.newPrice) : "",
+      paidSupplyPrice: b.paidSupplyPrice != null ? String(b.paidSupplyPrice) : "",
+      bdSupplyMat: b.bdSupplyMat != null ? String(b.bdSupplyMat) : "",
+      bdMaterial: b.bdMaterial != null ? String(b.bdMaterial) : "",
+      bdRevision: b.bdRevision != null ? String(b.bdRevision) : "",
+      bdDesign: b.bdDesign != null ? String(b.bdDesign) : "",
+      bdForex: b.bdForex != null ? String(b.bdForex) : "",
+      bdOther: b.bdOther != null ? String(b.bdOther) : "",
+      reasonNote: b.reasonNote ?? "",
+    }));
+    setLines((prev) => (isBlank(prev) ? newLines : [...prev, ...newLines]));
+    setTab("manual");
+  }
+
+  const th = "whitespace-nowrap px-2 py-2 text-left text-[11px] font-medium text-[#707070]";
+  const td = "px-2 py-1.5 align-top";
+  const cell =
+    "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
+  const labelCls2 = "block text-[10px] font-medium text-[#707070] mb-0.5";
+
+  const TABS: { key: Tab; label: string; icon: typeof Keyboard }[] = [
+    { key: "manual", label: "手入力", icon: Keyboard },
+    { key: "quote", label: "見積書から取り込み", icon: Sparkles },
+    { key: "bulk", label: "Excel/CSVで一括入力", icon: FileSpreadsheet },
+  ];
+
   return (
     <div className="space-y-4">
       {/* ① 発注先の選択（単価申請は発注先ごと） */}
@@ -338,7 +400,6 @@ export default function RequestForm({
         value={supplier}
         onChange={(s) => {
           setSupplier(s);
-          // 発注先を変えたら、明細の発注先も追随させる（品目は選び直す前提で残す）
           if (s) {
             setLines((prev) =>
               prev.map((l) => ({ ...l, supplierCd: s.code, supplierName: s.name }))
@@ -347,33 +408,17 @@ export default function RequestForm({
         }}
       />
 
-      {/* ツールバー: タイトル + 見積書AI取り込み */}
-      <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4">
-        <div className="min-w-64 flex-1">
-          <label className={labelCls}>申請タイトル（任意・例: 2026/8月改定 ○○社）</label>
-          <input
-            className={inputCls}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="例: 銀・銅価格高騰に伴う価格改定"
-          />
-        </div>
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowQuoteImport((v) => !v)}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
-          >
-            <FileUp className="h-4 w-4" />
-            {showQuoteImport ? "見積書の取り込みを閉じる" : "見積書から取り込む（Excel/PDF/画像）"}
-          </button>
-        </div>
+      {/* 申請タイトル */}
+      <div className="rounded-xl border border-[#e5e5e5] bg-white p-4">
+        <label className={labelCls}>申請タイトル（任意・例: 2026/8月改定 ○○社）</label>
+        <input
+          className={inputCls}
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="例: 銀・銅価格高騰に伴う価格改定"
+        />
       </div>
 
-      {/* 見積書のAI取り込み（複数ファイル・プレビュー確認後に明細へ反映） */}
-      {showQuoteImport && <QuoteImport today={today} onApply={applyQuoteLines} />}
-
-      {/* 明細（発注先を選ぶまでは入力させない） */}
       {!supplier ? (
         <div className="rounded-xl border border-dashed border-[#d5d5d5] bg-white p-8 text-center text-sm text-[#707070]">
           先に発注先を選択してください。選択すると、その発注先の取引品目から明細を入力できます。
@@ -386,258 +431,286 @@ export default function RequestForm({
             </span>
             <h2 className="text-sm font-bold text-[#333333]">品目と単価を入力してください</h2>
           </div>
-      {lines.map((l, i) => {
-        const d = diffOf(l);
-        const s = bdSum(l);
-        const mismatch = d != null && s != null && Math.abs(d - s) > 0.0001;
-        return (
-          <div key={i} className="rounded-xl border border-[#e5e5e5] bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-[#333333]">明細 {i + 1}</h3>
-              <button
-                type="button"
-                onClick={() => removeLine(i)}
-                disabled={lines.length <= 1}
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-30"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                削除
-              </button>
-            </div>
 
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-              <div className="col-span-2">
-                <label className={labelCls}>品目CD *（発注先の取引品目から選択）</label>
-                <ItemPicker
-                  supplierCd={supplier?.code ?? ""}
-                  value={l.itemCd}
-                  onTextChange={(code) => update(i, { itemCd: code })}
-                  onPick={(it) => pickItem(i, it)}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>枝番</label>
-                <input
-                  className={`${inputCls} font-mono`}
-                  value={l.itemBranch}
-                  onChange={(e) => update(i, { itemBranch: e.target.value })}
-                  placeholder="（なし）"
-                />
-              </div>
-              <div className="col-span-2">
-                <label className={labelCls}>品名</label>
-                <input
-                  className={inputCls}
-                  value={l.itemName}
-                  onChange={(e) => update(i, { itemName: e.target.value })}
-                  placeholder="タクトスイッチ"
-                />
-              </div>
-
-              <div>
-                <label className={labelCls}>納入場所CD</label>
-                <input
-                  className={`${inputCls} font-mono`}
-                  value={l.locCd}
-                  onChange={(e) => update(i, { locCd: e.target.value })}
-                  placeholder="M15"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>納入場所名</label>
-                <input
-                  className={inputCls}
-                  value={l.locName}
-                  onChange={(e) => update(i, { locName: e.target.value })}
-                  placeholder="直方内胴材料棟"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>納品先CD</label>
-                <input
-                  className={`${inputCls} font-mono`}
-                  value={l.dlvCd}
-                  onChange={(e) => update(i, { dlvCd: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>単位CD</label>
-                <input
-                  className={inputCls}
-                  value={l.unitCd}
-                  onChange={(e) => update(i, { unitCd: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>ロット数</label>
-                <input
-                  className={`${inputCls} text-right`}
-                  inputMode="decimal"
-                  value={l.lotQty}
-                  onChange={(e) => update(i, { lotQty: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className={labelCls}>通貨</label>
-                <input
-                  className={inputCls}
-                  value={l.currency}
-                  onChange={(e) => update(i, { currency: e.target.value })}
-                />
-              </div>
-
-            </div>
-
-            {/* 新単価 / 旧単価（帳票と同じ並びで新旧を対比） */}
-            <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_1fr_auto]">
-              {/* 旧単価（現行） */}
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 flex items-center gap-2 text-[11px] font-bold text-slate-600">
-                  旧 単 価（現行）
-                  <button
-                    type="button"
-                    title="単価履歴から現行単価を取得"
-                    onClick={() => void fetchCurrent(i)}
-                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 hover:bg-slate-100"
-                  >
-                    <Search className="h-3 w-3" />
-                    履歴から取得
-                  </button>
-                  {l.currentPrice.trim() === "" && (
-                    <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
-                      新規登録品
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className={labelCls}>取消日（自動）</label>
-                    <div className="rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-500">
-                      {l.currentPrice.trim() === "" || !l.startDate
-                        ? "—"
-                        : dayBeforeStr(l.startDate)}
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>単価</label>
-                    <input
-                      className={`${inputCls} text-right font-mono`}
-                      inputMode="decimal"
-                      value={l.currentPrice}
-                      onChange={(e) => update(i, { currentPrice: e.target.value })}
-                      placeholder="（新規は空欄）"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 新単価 */}
-              <div className="rounded-lg border border-rose-200 bg-rose-50/60 p-3">
-                <div className="mb-2 text-[11px] font-bold text-rose-800">新 単 価</div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <div>
-                    <label className={labelCls}>適用日 *</label>
-                    <input
-                      type="date"
-                      className={inputCls}
-                      value={l.startDate}
-                      onChange={(e) => update(i, { startDate: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>単価 *</label>
-                    <input
-                      className={`${inputCls} text-right font-mono font-bold`}
-                      inputMode="decimal"
-                      value={l.newPrice}
-                      onChange={(e) => update(i, { newPrice: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>支給単価</label>
-                    <input
-                      className={`${inputCls} text-right font-mono`}
-                      inputMode="decimal"
-                      value={l.paidSupplyPrice}
-                      onChange={(e) => update(i, { paidSupplyPrice: e.target.value })}
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>適用終了日</label>
-                    <input
-                      type="date"
-                      className={inputCls}
-                      value={l.endDate}
-                      onChange={(e) => update(i, { endDate: e.target.value })}
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* 単価差 */}
-              <div className="flex min-w-32 flex-col justify-center rounded-lg border border-[#e5e5e5] p-3">
-                <div className="mb-1 text-[11px] font-bold text-[#707070]">単価差（自動）</div>
-                <div
-                  className={`rounded border px-2 py-2 text-right font-mono text-lg font-bold ${
-                    d == null
-                      ? "border-[#eeeeee] bg-[#fafafa] text-[#a0a0a0]"
-                      : d > 0
-                        ? "border-red-200 bg-red-50 text-red-700"
-                        : d < 0
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-[#eeeeee] bg-[#fafafa]"
+          {/* 入力方法のタブ */}
+          <div className="inline-flex flex-wrap rounded-lg border border-[#e5e5e5] bg-white p-1 text-sm">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium ${
+                    tab === t.key ? "bg-[#e11d48] text-white" : "text-[#555555] hover:bg-[#f7f7f5]"
                   }`}
                 >
-                  {d == null ? "—" : d > 0 ? `+${d}` : String(d)}
-                </div>
-              </div>
-            </div>
-
-            {/* 改訂理由の内訳（承認用紙の内訳欄） */}
-            <div className="mt-3 rounded-lg bg-[#f8fafc] p-3">
-              <div className="mb-2 text-[11px] font-bold text-[#707070]">
-                単価差の内訳（改訂理由別・承認用紙に記載されます）
-                {mismatch && (
-                  <span className="ml-2 font-medium text-red-600">
-                    ⚠ 内訳合計 {s} が単価差 {d} と一致していません
-                  </span>
-                )}
-              </div>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                {(
-                  [
-                    ["bdSupplyMat", "支給材建値"],
-                    ["bdMaterial", "材料建値"],
-                    ["bdRevision", "単価改定"],
-                    ["bdDesign", "設計変更"],
-                    ["bdForex", "為替変動"],
-                    ["bdOther", "その他"],
-                  ] as const
-                ).map(([key, label]) => (
-                  <div key={key}>
-                    <label className={labelCls}>{label}</label>
-                    <input
-                      className={`${inputCls} text-right font-mono`}
-                      inputMode="decimal"
-                      value={l[key]}
-                      onChange={(e) => update(i, { [key]: e.target.value } as Partial<FormLine>)}
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2">
-                <label className={labelCls}>備考（改訂理由。例: 銀・銅価格の高騰に伴う価格改定）</label>
-                <input
-                  className={inputCls}
-                  value={l.reasonNote}
-                  onChange={(e) => update(i, { reasonNote: e.target.value })}
-                  placeholder="改訂理由を記入"
-                />
-              </div>
-            </div>
+                  <Icon className="h-4 w-4" />
+                  {t.label}
+                </button>
+              );
+            })}
           </div>
-        );
-      })}
+
+          {tab === "quote" && <QuoteImport today={today} onApply={applyQuoteLines} />}
+          {tab === "bulk" && <BulkLinesImport onApply={applyBulkLines} />}
+
+          {/* 明細（表形式） */}
+          <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
+            <table className="w-full min-w-[1100px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[#eeeeee] bg-[#fafafa]">
+                  <th className={`${th} w-10`}>#</th>
+                  <th className={`${th} w-52`}>品目CD *</th>
+                  <th className={`${th} w-48`}>品名</th>
+                  <th className={`${th} w-24`}>納入場所</th>
+                  <th className={`${th} w-28 border-l border-[#eeeeee] bg-rose-50`}>適用日 *</th>
+                  <th className={`${th} w-24 bg-rose-50 text-right`}>新単価 *</th>
+                  <th className={`${th} w-24 bg-rose-50 text-right`}>支給単価</th>
+                  <th className={`${th} w-28 border-l border-[#eeeeee] bg-slate-50 text-right`}>旧単価</th>
+                  <th className={`${th} w-24 border-l border-[#eeeeee] text-right`}>単価差</th>
+                  <th className={`${th} w-56`}>備考（改訂理由）</th>
+                  <th className={`${th} w-20 text-center`}>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => {
+                  const d = diffOf(l);
+                  const s = bdSum(l);
+                  const mismatch = d != null && s != null && Math.abs(d - s) > 0.0001;
+                  const isNew = l.currentPrice.trim() === "";
+                  return (
+                    <Fragment key={i}>
+                      <tr className="border-b border-[#f5f5f5] align-top">
+                        <td className={`${td} pt-3 text-xs text-[#707070]`}>{i + 1}</td>
+                        <td className={td}>
+                          <ItemPicker
+                            supplierCd={supplier.code}
+                            value={l.itemCd}
+                            onTextChange={(code) => update(i, { itemCd: code })}
+                            onPick={(it) => pickItem(i, it)}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={cell}
+                            value={l.itemName}
+                            onChange={(e) => update(i, { itemName: e.target.value })}
+                            placeholder="品名"
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={`${cell} font-mono`}
+                            value={l.locCd}
+                            onChange={(e) => update(i, { locCd: e.target.value })}
+                            placeholder="M15"
+                          />
+                        </td>
+                        {/* 新単価 */}
+                        <td className={`${td} border-l border-[#f0f0f0] bg-rose-50/40`}>
+                          <input
+                            type="date"
+                            className={cell}
+                            value={l.startDate}
+                            onChange={(e) => update(i, { startDate: e.target.value })}
+                          />
+                        </td>
+                        <td className={`${td} bg-rose-50/40`}>
+                          <input
+                            className={`${cell} text-right font-mono font-bold`}
+                            inputMode="decimal"
+                            value={l.newPrice}
+                            onChange={(e) => update(i, { newPrice: e.target.value })}
+                          />
+                        </td>
+                        <td className={`${td} bg-rose-50/40`}>
+                          <input
+                            className={`${cell} text-right font-mono`}
+                            inputMode="decimal"
+                            value={l.paidSupplyPrice}
+                            onChange={(e) => update(i, { paidSupplyPrice: e.target.value })}
+                          />
+                        </td>
+                        {/* 旧単価 */}
+                        <td className={`${td} border-l border-[#f0f0f0] bg-slate-50/60`}>
+                          <div className="flex gap-1">
+                            <input
+                              className={`${cell} text-right font-mono`}
+                              inputMode="decimal"
+                              value={l.currentPrice}
+                              onChange={(e) => update(i, { currentPrice: e.target.value })}
+                              placeholder="新規は空欄"
+                            />
+                            <button
+                              type="button"
+                              title="単価履歴から旧単価を取得"
+                              onClick={() => void fetchCurrent(i)}
+                              className="shrink-0 rounded border border-[#d5d5d5] bg-white px-1.5 text-[#e11d48] hover:bg-[#fff1f2]"
+                            >
+                              <Search className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-[#a0a0a0]">
+                            {isNew ? "新規登録品" : `取消日 ${dayBeforeStr(l.startDate)}`}
+                          </div>
+                        </td>
+                        {/* 単価差 */}
+                        <td className={`${td} border-l border-[#f0f0f0]`}>
+                          <div
+                            className={`rounded px-2 py-1 text-right font-mono text-sm font-bold ${
+                              d == null
+                                ? "bg-[#fafafa] text-[#a0a0a0]"
+                                : d > 0
+                                  ? "bg-red-50 text-red-700"
+                                  : d < 0
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-[#fafafa]"
+                            }`}
+                          >
+                            {d == null ? "—" : d > 0 ? `+${d}` : String(d)}
+                          </div>
+                          {mismatch && (
+                            <div className="mt-0.5 text-[10px] font-medium text-red-600">
+                              内訳計 {s}
+                            </div>
+                          )}
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={cell}
+                            value={l.reasonNote}
+                            onChange={(e) => update(i, { reasonNote: e.target.value })}
+                            placeholder="例: 銀・銅価格の高騰に伴う価格改定"
+                          />
+                        </td>
+                        <td className={`${td} text-center`}>
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              type="button"
+                              title="単価差の内訳を入力"
+                              onClick={() =>
+                                setOpenRows((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(i)) next.delete(i);
+                                  else next.add(i);
+                                  return next;
+                                })
+                              }
+                              className={`rounded p-1 ${
+                                openRows.has(i) || mismatch
+                                  ? "bg-[#fff1f2] text-[#e11d48]"
+                                  : "text-[#707070] hover:bg-[#f7f7f5]"
+                              }`}
+                            >
+                              <SlidersHorizontal className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeLine(i)}
+                              disabled={lines.length <= 1}
+                              className="rounded p-1 text-red-600 hover:bg-red-50 disabled:opacity-30"
+                              title="この明細を削除"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* 単価差の内訳（展開行） */}
+                      {openRows.has(i) && (
+                        <tr className="border-b border-[#f5f5f5] bg-[#f8fafc]">
+                          <td className={td}></td>
+                          <td className={td} colSpan={10}>
+                            <div className="mb-1.5 text-[11px] font-bold text-[#707070]">
+                              単価差の内訳（改訂理由別・申請書に記載されます）
+                              {mismatch && (
+                                <span className="ml-2 font-medium text-red-600">
+                                  ⚠ 内訳合計 {s} が単価差 {d} と一致していません
+                                </span>
+                              )}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                              {(
+                                [
+                                  ["bdSupplyMat", "支給材建値"],
+                                  ["bdMaterial", "材料建値"],
+                                  ["bdRevision", "単価改定"],
+                                  ["bdDesign", "設計変更"],
+                                  ["bdForex", "為替変動"],
+                                  ["bdOther", "その他"],
+                                ] as const
+                              ).map(([key, label]) => (
+                                <div key={key}>
+                                  <label className={labelCls2}>{label}</label>
+                                  <input
+                                    className={`${cell} text-right font-mono`}
+                                    inputMode="decimal"
+                                    value={l[key]}
+                                    onChange={(e) =>
+                                      update(i, { [key]: e.target.value } as Partial<FormLine>)
+                                    }
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                              <div>
+                                <label className={labelCls2}>枝番</label>
+                                <input
+                                  className={`${cell} font-mono`}
+                                  value={l.itemBranch}
+                                  onChange={(e) => update(i, { itemBranch: e.target.value })}
+                                />
+                              </div>
+                              <div>
+                                <label className={labelCls2}>納品先CD</label>
+                                <input
+                                  className={`${cell} font-mono`}
+                                  value={l.dlvCd}
+                                  onChange={(e) => update(i, { dlvCd: e.target.value })}
+                                />
+                              </div>
+                              <div>
+                                <label className={labelCls2}>単位CD</label>
+                                <input
+                                  className={cell}
+                                  value={l.unitCd}
+                                  onChange={(e) => update(i, { unitCd: e.target.value })}
+                                />
+                              </div>
+                              <div>
+                                <label className={labelCls2}>ロット数</label>
+                                <input
+                                  className={`${cell} text-right font-mono`}
+                                  inputMode="decimal"
+                                  value={l.lotQty}
+                                  onChange={(e) => update(i, { lotQty: e.target.value })}
+                                />
+                              </div>
+                              <div>
+                                <label className={labelCls2}>適用終了日</label>
+                                <input
+                                  type="date"
+                                  className={cell}
+                                  value={l.endDate}
+                                  onChange={(e) => update(i, { endDate: e.target.value })}
+                                />
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-[10px] text-[#a0a0a0]">
+                              ※ 未入力の項目は、MC取込出力時に mcframe の現行登録値がそのまま維持されます。
+                            </p>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
 
           <button
             type="button"
@@ -671,7 +744,7 @@ export default function RequestForm({
           onClick={() => void save(true)}
           className="rounded-lg bg-[#e11d48] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
         >
-          {saving === "submit" ? "提出中…" : "申請を提出（承認へ回す）"}
+          {saving === "submit" ? "提出中…" : `申請を提出（${lines.length}件を承認へ）`}
         </button>
       </div>
     </div>

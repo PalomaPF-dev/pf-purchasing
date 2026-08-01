@@ -246,6 +246,10 @@ export async function POST(req: Request) {
         { status: 422 }
       );
     }
+    // parseOnly: 申請は作らず、解析した明細だけを返す（申請フォームの一括入力タブ用）
+    if (String(form.get("parseOnly") ?? "") === "1") {
+      return NextResponse.json({ ok: true, kind, count: lines.length, lines, errors });
+    }
     const requestId = await createRequest(
       session.companyId,
       { title: `一括取込（${file.name}）`, lines },
