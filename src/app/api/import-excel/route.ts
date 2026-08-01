@@ -3,15 +3,16 @@ import ExcelJS from "exceljs";
 import { getSessionWithRole } from "@/lib/session";
 import {
   createRequest,
-  upsertItem,
+  upsertItemsBatch,
   upsertSupplier,
-  upsertEmployee,
   employeeNameMap,
+  applyHistoryReasons,
   setSupplierContacts,
   splitContactNames,
   normalizeName,
 } from "@/lib/db";
 import { parseCsv } from "@/lib/csv";
+import type { ItemInput as ItemRowInput } from "@/lib/db";
 import type { LineInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -26,21 +27,27 @@ export const maxDuration = 120;
  */
 
 const PRICE_HEADERS = [
-  "品目CD", "枝番", "品名", "発注先CD", "発注先名", "納入場所CD", "納入場所名",
+  "品目CD", "枝番", "品名", "取引先CD", "取引先名", "納入場所CD", "納入場所名",
   "納品先CD", "納品先名", "単位CD", "ロット数", "通貨", "適用開始日", "適用終了日",
   "現行単価", "購入単価", "有償支給価格",
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
-const ITEM_HEADERS = ["品目CD", "枝番", "品名", "単位CD", "仕入税CD", "備考"];
-const SUPPLIER_HEADERS = ["発注先CD", "発注先名", "担当バイヤー社員番号", "備考"];
-const EMPLOYEE_HEADERS = ["社員番号", "氏名", "承認W/F", "権限", "メールアドレス"];
+const ITEM_HEADERS = [
+  "品目CD", "品名", "単位ＣＤ", "科目", "科目名", "科目内訳",
+  "借方ICS科目名（製造）", "品目区分", "材料区分", "枝番", "仕入税CD", "備考",
+];
+const SUPPLIER_HEADERS = ["取引先CD", "取引先名", "担当バイヤー社員番号", "備考"];
 const CONTACT_HEADERS = ["取引先CD", "取引先名", "企画グループ", "管理グループ"];
+const REASON_HEADERS = [
+  "取引先CD", "品目CD", "開始日", "納入場所CD",
+  "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考", "出力社員名",
+];
 
 const TEMPLATES: Record<string, { headers: string[]; name: string }> = {
   items: { headers: ITEM_HEADERS, name: "品番マスタ取込" },
   suppliers: { headers: SUPPLIER_HEADERS, name: "取引先マスタ取込" },
-  employees: { headers: EMPLOYEE_HEADERS, name: "社員マスタ取込" },
   "supplier-contacts": { headers: CONTACT_HEADERS, name: "取引先担当窓口取込" },
+  "history-reasons": { headers: REASON_HEADERS, name: "単価改訂履歴の理由取込" },
   prices: { headers: PRICE_HEADERS, name: "単価申請取込" },
 };
 
@@ -169,13 +176,12 @@ export async function POST(req: Request) {
 
   // 種類ごとの想定シート名とキー列（実データのブック構成に合わせる）
   const SHEET_HINTS: Record<string, string[]> = {
-    employees: ["社員一覧", "社員"],
     "supplier-contacts": ["取引先CDと窓口一覧", "窓口"],
   };
   const KEY_COLS: Record<string, string[]> = {
+    "history-reasons": ["品目CD"],
     items: ["品目CD"],
-    suppliers: ["発注先CD"],
-    employees: ["社員番号"],
+    suppliers: ["取引先CD", "発注先CD"],
     "supplier-contacts": ["取引先CD", "発注先CD"],
     prices: ["品目CD"],
   };
@@ -193,10 +199,15 @@ export async function POST(req: Request) {
   }
 
   const h = headerMap(rows[0]);
-  const get = (row: string[], col: string) => {
-    const i = h.get(col);
-    return i == null ? "" : (row[i] ?? "").trim();
+  const get = (row: string[], ...cols: string[]) => {
+    for (const col of cols) {
+      const i = h.get(col);
+      if (i != null) return (row[i] ?? "").trim();
+    }
+    return "";
   };
+  /** 旧テンプレート（発注先CD/発注先名）も受け付ける */
+  const hasCol = (...cols: string[]) => cols.some((c) => h.has(c));
   const dataRows = rows.slice(1).filter((r) => r.some((c) => c.trim() !== ""));
 
   try {
@@ -204,34 +215,68 @@ export async function POST(req: Request) {
       if (!h.has("品目CD")) {
         return NextResponse.json({ error: "ヘッダに「品目CD」がありません。テンプレートをご利用ください。" }, { status: 422 });
       }
-      let count = 0;
+      // 「単位ＣＤ」(全角) と「単位CD」(半角) のどちらの表記でも受け付ける
+      const unitCol = h.has("単位ＣＤ") ? "単位ＣＤ" : "単位CD";
+      // 同じ品目CDが品目区分違いで複数行あるため、区分はまとめて（例: 3/7）保持する
+      const merged = new Map<string, ItemRowInput>();
+      const classes = new Map<string, Set<string>>();
       for (const r of dataRows) {
         const code = get(r, "品目CD");
         if (!code) continue;
-        await upsertItem(session.companyId, {
+        const branch = get(r, "枝番") || null;
+        const key = `${code}\u0000${branch ?? ""}`;
+        const cls = get(r, "品目区分");
+        if (cls) {
+          const set = classes.get(key) ?? new Set<string>();
+          set.add(cls);
+          classes.set(key, set);
+        }
+        const prev = merged.get(key);
+        const pick = (cur: string | null | undefined, next: string) => (next ? next : (cur ?? null));
+        merged.set(key, {
           code,
-          branch: get(r, "枝番") || null,
-          name: get(r, "品名"),
-          unitCd: get(r, "単位CD") || null,
-          taxCd: get(r, "仕入税CD") || null,
-          notes: get(r, "備考") || null,
+          branch,
+          name: pick(prev?.name, get(r, "品名")) ?? "",
+          unitCd: pick(prev?.unitCd, get(r, unitCol)),
+          taxCd: pick(prev?.taxCd, get(r, "仕入税CD")),
+          notes: pick(prev?.notes, get(r, "備考")),
+          acctCd: pick(prev?.acctCd, get(r, "科目")),
+          acctName: pick(prev?.acctName, get(r, "科目名")),
+          acctDetail: pick(prev?.acctDetail, get(r, "科目内訳")),
+          icsName: pick(prev?.icsName, get(r, "借方ICS科目名（製造）", "借方ICS科目名(製造)")),
+          itemClass: null,
+          materialClass: pick(prev?.materialClass, get(r, "材料区分")),
         });
-        count++;
       }
-      return NextResponse.json({ ok: true, kind, count });
+      for (const [key, v] of merged) {
+        const set = classes.get(key);
+        v.itemClass = set && set.size > 0 ? [...set].sort().join("/") : null;
+      }
+      const payload = [...merged.values()];
+      const skipped = dataRows.filter((r) => get(r, "品目CD")).length - payload.length;
+      const count = await upsertItemsBatch(session.companyId, payload);
+      return NextResponse.json({
+        ok: true,
+        kind,
+        count,
+        errors:
+          skipped > 0
+            ? [`同じ品目CDの行が ${skipped.toLocaleString()} 件ありました（品目区分は「3/7」のようにまとめて登録しています）`]
+            : [],
+      });
     }
 
     if (kind === "suppliers") {
-      if (!h.has("発注先CD")) {
-        return NextResponse.json({ error: "ヘッダに「発注先CD」がありません。テンプレートをご利用ください。" }, { status: 422 });
+      if (!hasCol("取引先CD", "発注先CD")) {
+        return NextResponse.json({ error: "ヘッダに「取引先CD」がありません。テンプレートをご利用ください。" }, { status: 422 });
       }
       let count = 0;
       for (const r of dataRows) {
-        const code = get(r, "発注先CD");
+        const code = get(r, "取引先CD", "発注先CD");
         if (!code) continue;
         await upsertSupplier(session.companyId, {
           code,
-          name: get(r, "発注先名"),
+          name: get(r, "取引先名", "取引先名"),
           notes: get(r, "備考") || null,
           buyerLoginId: get(r, "担当バイヤー社員番号") || null,
         });
@@ -240,41 +285,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, kind, count });
     }
 
-    if (kind === "employees") {
-      if (!h.has("社員番号")) {
-        return NextResponse.json({ error: "ヘッダに「社員番号」がありません。テンプレートをご利用ください。" }, { status: 422 });
-      }
-      let count = 0;
-      for (const r of dataRows) {
-        const loginId = get(r, "社員番号");
-        if (!loginId) continue;
-        const wf = get(r, "承認W/F");
-        const role = get(r, "権限");
-        await upsertEmployee(session.companyId, {
-          loginId,
-          name: get(r, "氏名"),
-          wfRole: /mgr|ＭＧＲ|MGR|マネージャ/i.test(wf)
-            ? "mgr"
-            : /dept|部門長|部長/.test(wf)
-              ? "dept"
-              : null,
-          role: /admin|管理者/i.test(role) ? "admin" : "member",
-          email: get(r, "メールアドレス") || null,
-        });
-        count++;
-      }
-      return NextResponse.json({ ok: true, kind, count });
-    }
-
     if (kind === "supplier-contacts") {
-      const codeCol = h.has("取引先CD") ? "取引先CD" : h.has("発注先CD") ? "発注先CD" : null;
-      if (!codeCol) {
+      if (!hasCol("取引先CD", "発注先CD")) {
         return NextResponse.json(
           { error: "ヘッダに「取引先CD」がありません。テンプレートをご利用ください。" },
           { status: 422 }
         );
       }
-      const nameCol = h.has("取引先名") ? "取引先名" : "発注先名";
+
       const byName = await employeeNameMap(session.companyId);
       // 氏名 → 社員番号。社員マスタに無い氏名は未解決として報告する
       const unresolved = new Set<string>();
@@ -287,13 +305,13 @@ export async function POST(req: Request) {
       };
       const payload = dataRows
         .map((r) => {
-          const code = get(r, codeCol);
+          const code = get(r, "取引先CD", "発注先CD");
           if (!code) return null;
           const plan = splitContactNames(get(r, "企画グループ"));
           const mgmt = splitContactNames(get(r, "管理グループ"));
           return {
             code,
-            name: get(r, nameCol) || null,
+            name: get(r, "取引先名") || null,
             buyerLoginId: resolve(plan.main),
             buyerSubLoginId: plan.sub ? resolve(plan.sub) : null,
             chaserLoginId: resolve(mgmt.main),
@@ -313,10 +331,56 @@ export async function POST(req: Request) {
       });
     }
 
+    if (kind === "history-reasons") {
+      if (!h.has("品目CD") || !hasCol("取引先CD", "発注先CD") || !h.has("開始日")) {
+        return NextResponse.json(
+          { error: "ヘッダに「品目CD」「取引先CD」「開始日」が必要です。" },
+          { status: 422 }
+        );
+      }
+      const payload = dataRows
+        .map((r) => ({
+          itemCd: get(r, "品目CD"),
+          supplierCd: get(r, "取引先CD", "発注先CD"),
+          locCd: get(r, "納入場所CD") || null,
+          startDate: normDate(get(r, "開始日")),
+          reason: get(r, "備考") || null,
+          bdMaterial: toNum(get(r, "材料建値")),
+          bdRevision: toNum(get(r, "単価改定")),
+          bdDesign: toNum(get(r, "設計変更")),
+          bdForex: toNum(get(r, "為替変動")),
+          bdOther: toNum(get(r, "その他")),
+          applicantName: get(r, "出力社員名") || null,
+        }))
+        // 内訳も備考も無い行は反映するものが無いので除く（同一キーの空行で上書きしない）
+        .filter(
+          (r) =>
+            r.itemCd &&
+            r.supplierCd &&
+            r.startDate &&
+            (r.reason ||
+              [r.bdMaterial, r.bdRevision, r.bdDesign, r.bdForex, r.bdOther].some((v) => v != null))
+        )
+        .map((r) => ({ ...r, startDate: r.startDate as string }));
+      if (payload.length === 0) {
+        return NextResponse.json({ error: "反映できる行がありません（備考・内訳が空の行のみ）" }, { status: 422 });
+      }
+      const res = await applyHistoryReasons(session.companyId, payload);
+      return NextResponse.json({
+        ok: true,
+        kind,
+        count: res.updated,
+        errors:
+          res.unmatched > 0
+            ? [`単価履歴に一致しなかった行が ${res.unmatched} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
+            : [],
+      });
+    }
+
     // kind=prices: 単価申請の一括取込（下書き作成）
-    if (!h.has("品目CD") || !h.has("発注先CD") || !h.has("購入単価")) {
+    if (!h.has("品目CD") || !hasCol("取引先CD", "発注先CD") || !h.has("購入単価")) {
       return NextResponse.json(
-        { error: "ヘッダに「品目CD」「発注先CD」「購入単価」が必要です。テンプレートをご利用ください。" },
+        { error: "ヘッダに「品目CD」「取引先CD」「購入単価」が必要です。テンプレートをご利用ください。" },
         { status: 422 }
       );
     }
@@ -324,12 +388,12 @@ export async function POST(req: Request) {
     const errors: string[] = [];
     dataRows.forEach((r, i) => {
       const itemCd = get(r, "品目CD");
-      const supplierCd = get(r, "発注先CD");
+      const supplierCd = get(r, "取引先CD", "発注先CD");
       if (!itemCd && !supplierCd) return;
       const newPrice = toNum(get(r, "購入単価"));
       const startDate = normDate(get(r, "適用開始日"));
       if (!itemCd) errors.push(`${i + 2}行目: 品目CDがありません`);
-      else if (!supplierCd) errors.push(`${i + 2}行目: 発注先CDがありません`);
+      else if (!supplierCd) errors.push(`${i + 2}行目: 取引先CDがありません`);
       else if (newPrice == null) errors.push(`${i + 2}行目: 購入単価が数値ではありません`);
       else if (!startDate) errors.push(`${i + 2}行目: 適用開始日が不正です（YYYY/MM/DD）`);
       else {
@@ -338,7 +402,7 @@ export async function POST(req: Request) {
           itemBranch: get(r, "枝番") || null,
           itemName: get(r, "品名") || null,
           supplierCd,
-          supplierName: get(r, "発注先名") || null,
+          supplierName: get(r, "取引先名") || null,
           locCd: get(r, "納入場所CD") || null,
           locName: get(r, "納入場所名") || null,
           dlvCd: get(r, "納品先CD") || null,

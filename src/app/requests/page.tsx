@@ -28,7 +28,7 @@ export default async function RequestsPage({
   const mine = sp.mine === "1";
   const q = sp.q ?? "";
 
-  // 一般（バイヤー）は自分の担当発注先を含む申請のみ
+  // 一般（バイヤー）は自分の担当取引先を含む申請のみ
   const scope = supplierScopeOf(session);
   const requests = await listRequests(session.companyId, {
     status: status || null,
@@ -92,7 +92,7 @@ export default async function RequestsPage({
           <input
             name="q"
             defaultValue={q}
-            placeholder="品目CD・品名・発注先で検索"
+            placeholder="品目CD・品名・取引先で検索"
             className="w-64 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
           />
         </form>
@@ -108,7 +108,7 @@ export default async function RequestsPage({
             <thead>
               <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
                 <th className="px-4 py-2.5 font-medium">申請No</th>
-                <th className="px-2 py-2.5 font-medium">タイトル / 発注先</th>
+                <th className="px-2 py-2.5 font-medium">タイトル / 取引先</th>
                 <th className="px-2 py-2.5 font-medium">明細</th>
                 <th className="px-2 py-2.5 font-medium">申請者</th>
                 <th className="px-2 py-2.5 font-medium">提出日時</th>

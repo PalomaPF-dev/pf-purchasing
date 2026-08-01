@@ -37,7 +37,7 @@ const NAV: NavGroup[] = [
   {
     title: "設定",
     items: [
-      // 一般（バイヤー・チェイサー）は自分の担当発注先のみ閲覧できる
+      // 一般（バイヤー・チェイサー）は自分の担当取引先のみ閲覧できる
       { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
       { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
       { href: "/employees", label: "ユーザー登録", icon: Users, adminOnly: true },

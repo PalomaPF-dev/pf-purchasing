@@ -1,14 +1,11 @@
 import { requireAdminPage } from "@/lib/session";
 import { listEmployees } from "@/lib/db";
-import { deleteEmployeeAction, upsertEmployeeAction } from "@/lib/actions";
+import { upsertEmployeeAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
-import DeleteButton from "@/components/DeleteButton";
 import SyncUsersButton from "@/components/SyncUsersButton";
-import ImportPanel from "@/components/ImportPanel";
+import EmployeeRow from "@/components/EmployeeRow";
 
 export const dynamic = "force-dynamic";
-
-const WF_LABEL: Record<string, string> = { mgr: "MGR", dept: "部門長" };
 
 /**
  * 社員マスタ（管理者のみ）。
@@ -32,8 +29,6 @@ export default async function EmployeesPage({
         description={`社員番号・氏名・承認W/F・権限を管理し、ログインユーザーをまとめて登録します（全 ${rows.length.toLocaleString()} 名）。取引先の担当窓口の名寄せにも使います。`}
       />
 
-      <ImportPanel kinds={["employees"]} title="Excel/CSVで社員一覧を一括登録" />
-
       <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-1 text-sm font-bold text-[#333333]">社員マスタからユーザーを登録</h2>
         <p className="mb-3 text-sm text-[#707070]">
@@ -48,8 +43,14 @@ export default async function EmployeesPage({
 
       <form
         action={upsertEmployeeAction}
-        className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-6"
+        className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-7"
       >
+        <div className="col-span-2 sm:col-span-7">
+          <h2 className="text-sm font-bold text-[#333333]">社員を追加</h2>
+          <p className="text-xs text-[#a0a0a0]">
+            既に登録済みの社員番号を入力すると、その社員の内容を上書きします。登録後の修正は一覧の鉛筆アイコンから行えます。
+          </p>
+        </div>
         <div>
           <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">社員番号 *</label>
           <input name="loginId" required className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 font-mono text-sm" />
@@ -72,6 +73,10 @@ export default async function EmployeesPage({
             <option value="member">一般</option>
             <option value="admin">管理者</option>
           </select>
+        </div>
+        <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">メールアドレス</label>
+          <input name="email" type="email" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm" />
         </div>
         <div className="flex items-end">
           <button className="w-full rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]">
@@ -97,45 +102,20 @@ export default async function EmployeesPage({
               <th className="px-2 py-2.5 font-medium">氏名</th>
               <th className="px-2 py-2.5 font-medium">承認W/F</th>
               <th className="px-2 py-2.5 font-medium">権限</th>
+              <th className="px-2 py-2.5 font-medium">メールアドレス</th>
               <th className="px-2 py-2.5 font-medium">ユーザー</th>
               <th className="px-2 py-2.5 font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((e) => (
-              <tr key={e.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
-                <td className="px-4 py-2 font-mono">{e.loginId}</td>
-                <td className="px-2 py-2">{e.name || <span className="text-[#a0a0a0]">—</span>}</td>
-                <td className="px-2 py-2">
-                  {e.wfRole ? (
-                    <span className="rounded-full bg-[#fff1f2] px-2 py-0.5 text-xs font-medium text-[#e11d48]">
-                      {WF_LABEL[e.wfRole]}
-                    </span>
-                  ) : (
-                    <span className="text-[#a0a0a0]">—</span>
-                  )}
-                </td>
-                <td className="px-2 py-2">{e.role === "admin" ? "管理者" : "一般"}</td>
-                <td className="px-2 py-2 text-xs">
-                  {e.userExists ? (
-                    <span className="text-emerald-700">登録済</span>
-                  ) : (
-                    <span className="text-[#a0a0a0]">未登録</span>
-                  )}
-                </td>
-                <td className="px-2 py-2 text-right">
-                  <DeleteButton
-                    action={deleteEmployeeAction.bind(null, e.id)}
-                    confirmText={`社員 ${e.loginId} ${e.name} を社員マスタから削除しますか？（ログインユーザーは削除されません）`}
-                  />
-                </td>
-              </tr>
+              <EmployeeRow key={e.id} employee={e} />
             ))}
           </tbody>
         </table>
         {rows.length === 0 && (
           <p className="p-6 text-center text-sm text-[#707070]">
-            社員が登録されていません。社員一覧のExcel/CSVを一括取込するか、上のフォームから登録してください。
+            社員が登録されていません。上の「社員を追加」から登録してください。
           </p>
         )}
       </div>

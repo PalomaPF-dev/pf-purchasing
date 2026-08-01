@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, FileUp, Loader2 } from "lucide-react";
 
-export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "employees";
+export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "history-reasons";
 type Kind = ImportKind;
 
 const KIND_INFO: Record<Kind, { label: string; note: string }> = {
@@ -18,15 +18,15 @@ const KIND_INFO: Record<Kind, { label: string; note: string }> = {
   },
   suppliers: {
     label: "取引先マスタの一括登録",
-    note: "発注先CDが同じ既存データは上書き（更新）されます。",
+    note: "取引先CDが同じ既存データは上書き（更新）されます。",
+  },
+  "history-reasons": {
+    label: "単価改訂履歴の理由",
+    note: "mcframe の単価改訂履歴（理由つき）を取り込み、既に移行済みの単価履歴に「備考（改訂理由）」と単価差の内訳（材料建値・単価改定・設計変更・為替変動・その他）を反映します。品目CD・取引先CD・納入場所CD・開始日が一致する履歴を更新するだけで、新しい履歴は作りません。",
   },
   "supplier-contacts": {
     label: "取引先の担当窓口",
-    note: "「取引先CD／取引先名／企画グループ／管理グループ」の一覧をそのまま取り込みます。氏名は社員マスタで社員番号に名寄せします（先に社員マスタを取り込んでください）。「町野 真一（髙橋 彩佳）」のような併記は主担当・副担当に分解します。",
-  },
-  employees: {
-    label: "社員マスタの一括登録",
-    note: "社員番号・氏名・承認W/F（MGR／部門長）・権限（管理者／一般）を登録します。取込後「社員マスタからユーザーを登録」でログインユーザーを作成できます。",
+    note: "「取引先CD／取引先名／企画グループ／管理グループ」の一覧をそのまま取り込みます。氏名は社員マスタ（ユーザー登録）で社員番号に名寄せします（先に社員を登録してください）。「町野 真一（髙橋 彩佳）」のような併記は主担当・副担当に分解します。",
   },
 };
 
@@ -63,6 +63,9 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
       if (kind === "prices" && data.requestId) {
         setResult(`${data.count} 件の明細を取り込みました。申請画面に移動します…`);
         setTimeout(() => router.push(`/requests/${data.requestId}`), 800);
+      } else if (kind === "history-reasons") {
+        setResult(`${data.count} 件の単価履歴に改訂理由・内訳を反映しました。`);
+        router.refresh();
       } else if (kind === "supplier-contacts") {
         setResult(
           `${data.count} 件を取り込みました（新規 ${data.created ?? 0} 件 / 更新 ${data.updated ?? 0} 件）。`
@@ -73,7 +76,12 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
         router.refresh();
       }
       if (Array.isArray(data.errors) && data.errors.length > 0) {
-        const head = kind === "supplier-contacts" ? "未反映の担当" : "スキップした行";
+        const head =
+          kind === "supplier-contacts"
+            ? "未反映の担当"
+            : kind === "history-reasons"
+              ? "未反映"
+              : "スキップした行";
         setError(`${head}: ${data.errors.slice(0, 5).join(" / ")}${data.errors.length > 5 ? ` 他${data.errors.length - 5}件` : ""}`);
       }
     } finally {

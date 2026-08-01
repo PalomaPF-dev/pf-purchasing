@@ -25,15 +25,15 @@ export interface QuoteResult {
 
 const EXTRACT_TOOL = {
   name: "extract_quote",
-  description: "見積書から発注先情報と品目ごとの見積単価を抽出して構造化する。",
+  description: "見積書から取引先情報と品目ごとの見積単価を抽出して構造化する。",
   input_schema: {
     type: "object",
     additionalProperties: false,
     properties: {
-      supplierName: { type: ["string", "null"], description: "見積元（発注先）の会社名" },
+      supplierName: { type: ["string", "null"], description: "見積元（取引先）の会社名" },
       supplierCd: {
         type: ["string", "null"],
-        description: "発注先コードが記載されていれば（例: 00906）。無ければ null",
+        description: "取引先コードが記載されていれば（例: 00906）。無ければ null",
       },
       quoteDate: { type: ["string", "null"], description: "見積日（YYYY-MM-DD）。無ければ null" },
       effectiveDate: {
@@ -66,7 +66,7 @@ const EXTRACT_TOOL = {
   },
 } as const;
 
-const SYSTEM_PROMPT = `あなたは製造業の購買部門の専門家です。渡された見積書を読み取り、発注先情報と品目ごとの見積単価を正確に構造化してください。
+const SYSTEM_PROMPT = `あなたは製造業の購買部門の専門家です。渡された見積書を読み取り、取引先情報と品目ごとの見積単価を正確に構造化してください。
 
 読み取りのポイント:
 - 見積単価は税抜の単価を使います（税込しか無い場合はその値を使い notes に「税込」と記載）。

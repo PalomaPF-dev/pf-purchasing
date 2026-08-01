@@ -73,7 +73,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       },
       {
         type: "text",
-        text: "この見積書を読み取り、extract_quote ツールで発注先と品目ごとの見積単価を構造化してください。複数シート・複数品目があればすべて含めてください。",
+        text: "この見積書を読み取り、extract_quote ツールで取引先と品目ごとの見積単価を構造化してください。複数シート・複数品目があればすべて含めてください。",
       },
     ];
   } else {
@@ -105,7 +105,7 @@ export async function POST(req: Request): Promise<NextResponse> {
       source,
       {
         type: "text",
-        text: "この見積書を読み取り、extract_quote ツールで発注先と品目ごとの見積単価を構造化してください。",
+        text: "この見積書を読み取り、extract_quote ツールで取引先と品目ごとの見積単価を構造化してください。",
       },
     ];
   }

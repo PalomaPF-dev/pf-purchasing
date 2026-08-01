@@ -2,6 +2,7 @@ import { requireAdminPage } from "@/lib/session";
 import { migrationStatus } from "@/lib/db";
 import PageHeader from "@/components/PageHeader";
 import MigrateForm from "@/components/MigrateForm";
+import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,11 @@ export default async function MigratePage() {
         migratedCount={status.count}
         migratedAt={status.lastAt}
       />
+
+      {/* 単価情報には改訂理由が含まれないため、改訂履歴のエクスポートで後から補完する */}
+      <div className="mt-4">
+        <ImportPanel kinds={["history-reasons"]} title="単価改訂履歴の理由を単価履歴に反映する" />
+      </div>
     </div>
   );
 }

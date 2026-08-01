@@ -4,20 +4,20 @@ import { listSuppliers } from "@/lib/db";
 import { deleteSupplierAction, upsertSupplierAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
-import ContactsAssign from "@/components/ContactsAssign";
+import ContactsAssign, { ContactLabel } from "@/components/ContactsAssign";
 import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 100;
 
-/** 取引先（発注先）マスタ。同じ発注先CDで登録すると上書き更新。 */
+/** 取引先マスタ。同じ取引先CDで登録すると上書き更新。 */
 export default async function SuppliersPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string; page?: string }>;
 }) {
-  // 管理者は全件＋担当割当、一般（バイヤー）は自分の担当発注先のみ閲覧
+  // 管理者は全件＋担当割当、一般（バイヤー）は自分の担当取引先のみ閲覧
   const session = await requireSession();
   const scope = supplierScopeOf(session);
   const isAdmin = !scope.restricted;
@@ -38,8 +38,8 @@ export default async function SuppliersPage({
         title="取引先マスタ"
         description={
           isAdmin
-            ? `発注先の登録・編集と担当（バイヤー主/副・チェイサー）の割当（全 ${total.toLocaleString()} 件）。`
-            : `あなたが担当する発注先（${total.toLocaleString()} 件）。単価申請・単価履歴もこの発注先のみが対象です。`
+            ? `取引先の登録・編集と担当窓口（企画G＝バイヤー／管理G＝チェイサー）の割当（全 ${total.toLocaleString()} 件）。`
+            : `あなたが担当する取引先（${total.toLocaleString()} 件）。単価申請・単価履歴もこの取引先のみが対象です。`
         }
       />
 
@@ -56,16 +56,16 @@ export default async function SuppliersPage({
           className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-5"
         >
           <div>
-            <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">発注先CD *</label>
+            <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">取引先CD *</label>
             <input name="code" required className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 font-mono text-sm" />
           </div>
           <div className="col-span-2">
-            <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">発注先名 *</label>
+            <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">取引先名 *</label>
             <input name="name" required className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm" />
           </div>
           <div>
             <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">
-              担当バイヤー（社員番号）
+              企画G バイヤー（社員番号）
             </label>
             <input
               name="buyerLoginId"
@@ -85,7 +85,7 @@ export default async function SuppliersPage({
         <input
           name="q"
           defaultValue={q}
-          placeholder="発注先CD・発注先名で検索"
+          placeholder="取引先CD・取引先名で検索"
           className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
         />
       </form>
@@ -94,11 +94,10 @@ export default async function SuppliersPage({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
-              <th className="px-4 py-2.5 font-medium">発注先CD</th>
-              <th className="px-2 py-2.5 font-medium">発注先名</th>
-              <th className="px-2 py-2.5 font-medium">
-                担当バイヤー（副）/ チェイサー
-              </th>
+              <th className="px-4 py-2.5 font-medium">取引先CD</th>
+              <th className="px-2 py-2.5 font-medium">取引先名</th>
+              <th className="px-2 py-2.5 font-medium">企画G（バイヤー）</th>
+              <th className="px-2 py-2.5 font-medium">管理G（チェイサー）</th>
               <th className="px-2 py-2.5 font-medium"></th>
             </tr>
           </thead>
@@ -112,17 +111,34 @@ export default async function SuppliersPage({
                     <ContactsAssign
                       supplierId={s.id}
                       supplierLabel={`${s.code} ${s.name}`}
-                      buyerLoginId={s.buyerLoginId}
-                      buyerSubLoginId={s.buyerSubLoginId ?? null}
-                      chaserLoginId={s.chaserLoginId ?? null}
+                      group="planning"
+                      buyer={{ loginId: s.buyerLoginId, name: s.buyerName ?? null }}
+                      buyerSub={{ loginId: s.buyerSubLoginId ?? null, name: s.buyerSubName ?? null }}
+                      chaser={{ loginId: s.chaserLoginId ?? null, name: s.chaserName ?? null }}
                     />
                   ) : (
-                    <span className="font-mono text-xs">
-                      {s.buyerLoginId ?? "—"}
-                      {s.buyerSubLoginId && <span className="text-[#707070]">（{s.buyerSubLoginId}）</span>}
-                      <span className="mx-1 text-[#d5d5d5]">/</span>
-                      {s.chaserLoginId ?? "—"}
-                    </span>
+                    <>
+                      <ContactLabel loginId={s.buyerLoginId} name={s.buyerName ?? null} />
+                      {s.buyerSubLoginId && (
+                        <span className="block text-xs text-[#707070]">
+                          副: <ContactLabel loginId={s.buyerSubLoginId} name={s.buyerSubName ?? null} />
+                        </span>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className="px-2 py-2">
+                  {isAdmin ? (
+                    <ContactsAssign
+                      supplierId={s.id}
+                      supplierLabel={`${s.code} ${s.name}`}
+                      group="management"
+                      buyer={{ loginId: s.buyerLoginId, name: s.buyerName ?? null }}
+                      buyerSub={{ loginId: s.buyerSubLoginId ?? null, name: s.buyerSubName ?? null }}
+                      chaser={{ loginId: s.chaserLoginId ?? null, name: s.chaserName ?? null }}
+                    />
+                  ) : (
+                    <ContactLabel loginId={s.chaserLoginId ?? null} name={s.chaserName ?? null} />
                   )}
                 </td>
                 <td className="px-2 py-2 text-right">
@@ -141,7 +157,7 @@ export default async function SuppliersPage({
           <p className="p-6 text-center text-sm text-[#707070]">
             {isAdmin
               ? "取引先がありません。"
-              : "担当の発注先が登録されていません。管理者に担当の割当を依頼してください。"}
+              : "担当の取引先が登録されていません。管理者に担当の割当を依頼してください。"}
           </p>
         )}
       </div>

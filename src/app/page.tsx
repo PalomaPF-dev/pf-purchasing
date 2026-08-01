@@ -44,7 +44,7 @@ export default async function DashboardPage({
   const { companyId, role, loginId } = session;
   const isAdmin = role === "admin";
 
-  // 一般（バイヤー）は自分の担当発注先の範囲だけを表示する
+  // 一般（バイヤー）は自分の担当取引先の範囲だけを表示する
   const scope = supplierScopeOf(session);
   const [stats, wf, myRequests, awaiting, recent] = await Promise.all([
     dashboardStats(companyId),
@@ -204,7 +204,7 @@ export default async function DashboardPage({
                   <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
                     <th className="px-4 py-2 font-medium">品目CD</th>
                     <th className="px-2 py-2 font-medium">品名</th>
-                    <th className="px-2 py-2 font-medium">発注先</th>
+                    <th className="px-2 py-2 font-medium">取引先</th>
                     <th className="px-2 py-2 text-right font-medium">単価</th>
                     <th className="px-2 py-2 font-medium">適用開始</th>
                   </tr>

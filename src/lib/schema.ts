@@ -23,7 +23,7 @@ let schemaReady: Promise<void> | null = null;
 
 /**
  * 購買単価管理のドメインテーブルを冪等に作成。
- * - suppliers            … 取引先（発注先）マスタ
+ * - suppliers            … 取引先マスタ
  * - items                … 品番（品目）マスタ
  * - price_requests       … 単価申請ヘッダ（承認ワークフローの単位）
  * - price_request_lines  … 単価申請明細（承認用紙1枚＝1明細）
@@ -49,7 +49,7 @@ async function buildSchema(): Promise<void> {
 
   await ensureAuthSchema();
 
-  // 取引先（発注先）マスタ
+  // 取引先マスタ
   await safeDdl(() => sql`
     CREATE TABLE IF NOT EXISTS suppliers (
       id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -63,7 +63,7 @@ async function buildSchema(): Promise<void> {
       UNIQUE (company_id, code)
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_company_idx ON suppliers(company_id)`);
-  // 担当バイヤー（社員番号 = users.login_id）。一般ユーザーは自分の担当発注先のみ
+  // 担当バイヤー（社員番号 = users.login_id）。一般ユーザーは自分の担当取引先のみ
   // 閲覧・申請できる。NULL = 未割当（管理者のみが扱える）。
   await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS buyer_login_id TEXT`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_buyer_idx ON suppliers(company_id, buyer_login_id)`);
@@ -113,6 +113,13 @@ async function buildSchema(): Promise<void> {
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS items_company_idx ON items(company_id)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS items_code_idx ON items(company_id, code)`);
+  // mcframe の品目マスタ項目（科目・品目区分など）
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS acct_cd TEXT`);
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS acct_name TEXT`);
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS acct_detail TEXT`);
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS ics_name TEXT`);
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS item_class TEXT`);
+  await safeDdl(() => sql`ALTER TABLE items ADD COLUMN IF NOT EXISTS material_class TEXT`);
 
   // 単価申請ヘッダ（1申請＝複数明細可。承認W/Fの単位）
   await safeDdl(() => sql`

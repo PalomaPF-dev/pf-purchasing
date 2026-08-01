@@ -178,7 +178,7 @@ export default function BulkApprove({
                   />
                 </th>
                 <th className="px-2 py-2.5 font-medium">申請No</th>
-                <th className="px-2 py-2.5 font-medium">タイトル / 発注先</th>
+                <th className="px-2 py-2.5 font-medium">タイトル / 取引先</th>
                 <th className="px-2 py-2.5 font-medium">明細</th>
                 <th className="px-2 py-2.5 font-medium">申請者</th>
                 <th className="px-2 py-2.5 font-medium">提出日時</th>

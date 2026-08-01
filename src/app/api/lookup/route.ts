@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
       const suppliers = await searchSuppliers(session.companyId, q);
       return NextResponse.json({ suppliers });
     }
-    // 申請の起点: 発注先の選択候補（取引品目数つき。q 空でも先頭を返す）
+    // 申請の起点: 取引先の選択候補（取引品目数つき。q 空でも先頭を返す）
     if (type === "supplier-picker") {
-      // 一般（バイヤー）は自分の担当発注先のみ
+      // 一般（バイヤー）は自分の担当取引先のみ
       const scope = supplierScopeOf(session);
       const suppliers = await searchActiveSuppliers(
         session.companyId,
@@ -50,11 +50,11 @@ export async function GET(req: NextRequest) {
       );
       return NextResponse.json({ suppliers });
     }
-    // 発注先を選んだ後の品目候補（単価履歴ベース。品名・単位・現行単価つき）
+    // 取引先を選んだ後の品目候補（単価履歴ベース。品名・単位・現行単価つき）
     if (type === "supplier-items") {
       const supplier = (sp.get("supplier") ?? "").trim();
       if (!supplier) return NextResponse.json({ items: [] });
-      // 担当外の発注先の品目は返さない
+      // 担当外の取引先の品目は返さない
       const scope = supplierScopeOf(session);
       if (!(await canAccessSupplier(session.companyId, supplier, scope.buyerLoginId))) {
         return NextResponse.json({ items: [] });

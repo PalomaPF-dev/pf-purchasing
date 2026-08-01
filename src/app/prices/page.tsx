@@ -42,7 +42,7 @@ export default async function PricesPage({
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader
         title="単価履歴"
-        description={`購買単価の適用履歴（${scope.restricted ? "担当発注先のみ・" : ""}全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
+        description={`購買単価の適用履歴（${scope.restricted ? "担当取引先のみ・" : ""}全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -51,7 +51,7 @@ export default async function PricesPage({
           <input
             name="q"
             defaultValue={q}
-            placeholder="品目CD・品名・発注先CD・発注先名で検索"
+            placeholder="品目CD・品名・取引先CD・取引先名で検索"
             className="w-80 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
           />
           <button className="rounded-lg bg-[#e11d48] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#be123c]">
@@ -84,7 +84,7 @@ export default async function PricesPage({
               <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
                 <th className="px-4 py-2.5 font-medium">品目CD</th>
                 <th className="px-2 py-2.5 font-medium">品名</th>
-                <th className="px-2 py-2.5 font-medium">発注先</th>
+                <th className="px-2 py-2.5 font-medium">取引先</th>
                 <th className="px-2 py-2.5 font-medium">納入場所</th>
                 <th className="px-2 py-2.5 text-right font-medium">単価</th>
                 <th className="px-2 py-2.5 font-medium">適用開始</th>

@@ -21,8 +21,10 @@ import {
   saveWfSettings,
   setSupplierContactIds,
   upsertItem,
+  updateItem,
   upsertSupplier,
   upsertEmployee,
+  updateEmployee,
   deleteEmployee,
   syncUsersFromEmployees,
 } from "./db";
@@ -30,8 +32,8 @@ import type { WfSettings } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
- * 明細の発注先がログイン中ユーザーの担当かをサーバー側で検証する。
- * 一般（バイヤー）は担当外の発注先に申請できない（UIでも選べないが必ず防ぐ）。
+ * 明細の取引先がログイン中ユーザーの担当かをサーバー側で検証する。
+ * 一般（バイヤー）は担当外の取引先に申請できない（UIでも選べないが必ず防ぐ）。
  */
 async function assertSupplierAllowed(
   s: { companyId: string; role: "admin" | "member"; loginId: string | null },
@@ -42,7 +44,7 @@ async function assertSupplierAllowed(
   const codes = [...new Set(lines.map((l) => (l.supplierCd ?? "").trim()).filter(Boolean))];
   for (const code of codes) {
     if (!(await canAccessSupplier(s.companyId, code, scope.buyerLoginId))) {
-      throw new Error(`発注先 ${code} はあなたの担当ではありません。担当の発注先のみ申請できます。`);
+      throw new Error(`取引先 ${code} はあなたの担当ではありません。担当の取引先のみ申請できます。`);
     }
   }
 }
@@ -276,13 +278,52 @@ export async function upsertItemAction(formData: FormData): Promise<void> {
   const code = String(formData.get("code") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
   if (!code) throw new Error("品目CDは必須です");
+  const fs = (k: string) => String(formData.get(k) ?? "").trim() || null;
   await upsertItem(s.companyId, {
     code,
-    branch: String(formData.get("branch") ?? "").trim() || null,
+    branch: fs("branch"),
     name,
-    unitCd: String(formData.get("unitCd") ?? "").trim() || null,
-    taxCd: String(formData.get("taxCd") ?? "").trim() || null,
-    notes: String(formData.get("notes") ?? "").trim() || null,
+    unitCd: fs("unitCd"),
+    taxCd: fs("taxCd"),
+    notes: fs("notes"),
+    acctCd: fs("acctCd"),
+    acctName: fs("acctName"),
+    acctDetail: fs("acctDetail"),
+    icsName: fs("icsName"),
+    itemClass: fs("itemClass"),
+    materialClass: fs("materialClass"),
+  });
+  revalidatePath("/items");
+}
+
+/** 登録済み品番の編集（管理者のみ）。品目CD・枝番は変更できない。 */
+export async function updateItemAction(
+  id: string,
+  item: {
+    name: string;
+    notes: string;
+    acctCd: string;
+    acctName: string;
+    acctDetail: string;
+    icsName: string;
+    itemClass: string;
+    materialClass: string;
+    active: boolean;
+  }
+): Promise<void> {
+  const s = await requireAdminSession();
+  if (!item.name.trim()) throw new Error("品名は必須です");
+  const nz = (v: string) => v.trim() || null;
+  await updateItem(s.companyId, id, {
+    name: item.name,
+    notes: nz(item.notes),
+    acctCd: nz(item.acctCd),
+    acctName: nz(item.acctName),
+    acctDetail: nz(item.acctDetail),
+    icsName: nz(item.icsName),
+    itemClass: nz(item.itemClass),
+    materialClass: nz(item.materialClass),
+    active: item.active,
   });
   revalidatePath("/items");
 }
@@ -297,7 +338,7 @@ export async function upsertSupplierAction(formData: FormData): Promise<void> {
   const s = await requireAdminSession();
   const code = String(formData.get("code") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
-  if (!code) throw new Error("発注先CDは必須です");
+  if (!code) throw new Error("取引先CDは必須です");
   await upsertSupplier(s.companyId, {
     code,
     name,
@@ -334,6 +375,29 @@ export async function upsertEmployeeAction(formData: FormData): Promise<void> {
     wfRole: wf === "mgr" || wf === "dept" ? wf : null,
     role: String(formData.get("role") ?? "") === "admin" ? "admin" : "member",
     email: String(formData.get("email") ?? "").trim() || null,
+  });
+  revalidatePath("/employees");
+}
+
+/** 登録済み社員の編集（管理者のみ）。社員番号は変更できない。 */
+export async function updateEmployeeAction(
+  id: string,
+  e: {
+    name: string;
+    wfRole: "mgr" | "dept" | null;
+    role: "admin" | "member";
+    email: string;
+    active: boolean;
+  }
+): Promise<void> {
+  const s = await requireAdminSession();
+  if (!e.name.trim()) throw new Error("氏名は必須です");
+  await updateEmployee(s.companyId, id, {
+    name: e.name,
+    wfRole: e.wfRole,
+    role: e.role,
+    email: e.email.trim() || null,
+    active: e.active,
   });
   revalidatePath("/employees");
 }

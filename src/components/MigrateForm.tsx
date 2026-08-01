@@ -287,7 +287,7 @@ export default function MigrateForm({
       <div className="rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-2 text-sm font-bold text-[#333333]">品名・取引先名の補完</h2>
         <p className="mb-3 text-sm text-[#707070]">
-          単価情報には品名・発注先名が含まれないため、移行直後は名称が空欄です。
+          単価情報には品名・取引先名が含まれないため、移行直後は名称が空欄です。
           品番マスタ・取引先マスタを取り込んだ後にこのボタンを押すと、履歴の名称をマスタから補完します
           （何度実行しても安全です）。
         </p>

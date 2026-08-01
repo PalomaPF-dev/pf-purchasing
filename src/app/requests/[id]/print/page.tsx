@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 /**
  * 単価申請書（登録品単価連絡書）。A4横・PDF保存用。
  * 現行の紙帳票にならい、1行＝1品番で「新単価」「旧単価」を左右に並べて新旧を対比する。
- * 右上に承認欄（部門長・MGR・担当）、左上に発注先。単価差の内訳は下部にまとめる。
+ * 右上に承認欄（部門長・MGR・担当）、左上に取引先。単価差の内訳は下部にまとめる。
  */
 export default async function RequestPrintPage({
   params,
@@ -30,7 +30,7 @@ export default async function RequestPrintPage({
   const mgr = [...approvals].reverse().find((a) => a.stage === "mgr" && a.action === "approve");
   const dept = [...approvals].reverse().find((a) => a.stage === "dept" && a.action === "approve");
 
-  // 発注先は明細の先頭を代表として見出しに出す（複数取引先が混在する場合は各行にも表示される）
+  // 取引先は明細の先頭を代表として見出しに出す（複数取引先が混在する場合は各行にも表示される）
   const head = lines[0];
   const multiSupplier = lines.some((l) => l.supplierCd !== head?.supplierCd);
 
@@ -50,14 +50,14 @@ export default async function RequestPrintPage({
       </div>
 
       <div className="mx-auto max-w-6xl px-6 pb-8 text-slate-900">
-        {/* 上段: 発注先 / タイトル / 承認欄 */}
+        {/* 上段: 取引先 / タイトル / 承認欄 */}
         <div className="mb-4 flex items-start justify-between gap-4">
-          {/* 発注先 */}
+          {/* 取引先 */}
           <table className="border-collapse">
             <tbody>
               <tr>
-                <td className={`${th} w-24`}>発注先CD</td>
-                <td className={`${th} w-56`}>発注先名</td>
+                <td className={`${th} w-24`}>取引先CD</td>
+                <td className={`${th} w-56`}>取引先名</td>
               </tr>
               <tr>
                 <td className={`${td} text-center font-mono`}>
@@ -147,7 +147,7 @@ export default async function RequestPrintPage({
                     {l.itemCd}
                     {l.itemBranch ? `-${l.itemBranch}` : ""}
                     {multiSupplier && (
-                      <div className="text-[10px] text-slate-500">発注先 {l.supplierCd}</div>
+                      <div className="text-[10px] text-slate-500">取引先 {l.supplierCd}</div>
                     )}
                   </td>
                   <td className={`${td} text-center font-mono text-[9px]`}>
