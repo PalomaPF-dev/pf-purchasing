@@ -819,6 +819,26 @@ export interface MigrationRow {
 }
 
 /**
+ * 初期データ移行の実施状況。
+ * 移行は運用開始時に過去履歴を引き継ぐための1回限りの作業。実施済みかどうかを判定する。
+ */
+export async function migrationStatus(companyId: string): Promise<{
+  done: boolean;
+  count: number;
+  lastAt: string | null;
+}> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT COUNT(*)::int AS n, MAX(created_at) AS last_at
+    FROM price_history
+    WHERE company_id = ${companyId} AND source = 'migration'`;
+  const r = (rows as any[])[0];
+  const count = Number(r?.n ?? 0);
+  return { done: count > 0, count, lastAt: r?.last_at ? tsStr(r.last_at) : null };
+}
+
+/**
  * 移行データを一括登録し、品目・取引先マスタのスタブ（名称未設定）も upsert する。
  * 冪等化のため、同一キー＋開始日の既存移行行は挿入しない。
  * 登録件数（スキップ除く）を返す。

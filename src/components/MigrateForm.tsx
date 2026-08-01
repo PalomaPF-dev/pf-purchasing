@@ -2,14 +2,16 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { DatabaseZap, Loader2, Wand2 } from "lucide-react";
+import { CheckCircle2, DatabaseZap, Loader2, Wand2 } from "lucide-react";
 import { backfillNamesAction } from "@/lib/actions";
+import { formatDateTime } from "@/lib/format";
 
 /**
- * 単価履歴データ移行フォーム。
+ * 初期データ移行フォーム（運用開始時の1回限り）。
  * mcframe からエクスポートした「単価情報」を CSV（UTF-8）で読み込み、
  * ブラウザ側で1000行ずつに分割してサーバへ送信する（大容量ファイル対応）。
- * 論理削除行（del_flg≠0）はスキップ。再実行しても同一データは二重登録されない（冪等）。
+ * 論理削除行（del_flg≠0）はスキップ。同一データは二重登録されない（冪等）。
+ * 実施済みの場合は完了表示のみとし、取込UIは明示操作でのみ開く（誤操作での再実行防止）。
  */
 
 const BATCH_SIZE = 1000;
@@ -70,9 +72,20 @@ function parseCsvText(text: string): string[][] {
   return rows;
 }
 
-export default function MigrateForm({ historyCount }: { historyCount: number }) {
+export default function MigrateForm({
+  migrated,
+  migratedCount,
+  migratedAt,
+}: {
+  /** 初期データ移行が実施済みか（実施済みなら取込UIは既定で隠す） */
+  migrated: boolean;
+  migratedCount: number;
+  migratedAt: string | null;
+}) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  // 実施済みの場合、取込UIは明示的に開いたときだけ表示する（誤操作での再実行を防ぐ）
+  const [reopened, setReopened] = useState(false);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{
     total: number;
@@ -181,14 +194,43 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
 
   const pct = progress && progress.total > 0 ? Math.round((progress.sent / progress.total) * 100) : 0;
 
+  // 実施済み かつ 再実行を明示的に開いておらず、今回の取込も走っていない場合は完了表示のみ
+  const showUploader = !migrated || reopened || busy || progress != null || done;
+
   return (
     <div className="space-y-4">
+      {/* 実施済みの案内（この作業は運用開始時の1回限り） */}
+      {migrated && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
+          <h2 className="flex items-center gap-2 text-sm font-bold text-emerald-900">
+            <CheckCircle2 className="h-4 w-4" />
+            初期データ移行は完了しています
+          </h2>
+          <p className="mt-2 text-sm text-emerald-800">
+            過去の単価履歴 {migratedCount.toLocaleString()} 件を取り込み済みです
+            {migratedAt ? `（最終実施: ${formatDateTime(migratedAt)}）` : ""}。
+            この作業は運用開始時の1回のみで、以後の単価は「単価申請 → 承認」で単価履歴に積み上がります。
+          </p>
+          {!showUploader && (
+            <button
+              onClick={() => setReopened(true)}
+              className="mt-3 text-xs text-emerald-800 underline hover:text-emerald-900"
+            >
+              取り込み漏れがあった場合はこちら（追加分のみ取り込みます）
+            </button>
+          )}
+        </div>
+      )}
+
+      {showUploader && (
       <div className="rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-2 text-sm font-bold text-[#333333]">単価情報（mcframe）の取り込み</h2>
+        <h2 className="mb-2 text-sm font-bold text-[#333333]">
+          {migrated ? "追加取り込み（取り込み漏れの補完）" : "単価情報（mcframe）の取り込み"}
+        </h2>
         <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-[#707070]">
           <li>mcframe からエクスポートした「単価情報」の Excel を開き、「CSV UTF-8（コンマ区切り）」で保存します。</li>
           <li>保存した CSV を下で選択すると、1,000行ずつ自動送信されます（21万行で数分程度）。送信中はこのページを開いたままにしてください。</li>
-          <li>論理削除行（del_flg≠0）はスキップされます。再実行しても同じ行は二重登録されません。</li>
+          <li>論理削除行（del_flg≠0）はスキップされます。既に取り込んだ行は二重登録されないため、同じファイルを選び直しても安全です。</li>
         </ol>
         <input
           ref={fileRef}
@@ -199,7 +241,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
             const f = e.target.files?.[0];
             if (f) void run(f);
           }}
-          className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff1f2] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#e11d48] hover:file:bg-[#dbe8ff]"
+          className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff1f2] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#e11d48] hover:file:bg-[#ffe4e6]"
         />
 
         {busy && !progress && (
@@ -235,17 +277,19 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
         {done && (
           <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             <DatabaseZap className="h-4 w-4" />
-            移行が完了しました。単価履歴から確認できます。
+            移行が完了しました。単価履歴から確認できます。この作業は以後不要です。
           </div>
         )}
       </div>
+      )}
 
       {/* 名称補完 */}
       <div className="rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-2 text-sm font-bold text-[#333333]">品名・取引先名の補完</h2>
         <p className="mb-3 text-sm text-[#707070]">
           単価情報には品名・発注先名が含まれないため、移行直後は名称が空欄です。
-          品番マスタ・取引先マスタを取り込んだ後にこのボタンを押すと、履歴の名称をマスタから補完します。
+          品番マスタ・取引先マスタを取り込んだ後にこのボタンを押すと、履歴の名称をマスタから補完します
+          （何度実行しても安全です）。
         </p>
         <button
           disabled={busy}
@@ -266,7 +310,9 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
         {backfillMsg && <p className="mt-2 text-sm text-emerald-700">{backfillMsg}</p>}
       </div>
 
-      <p className="text-xs text-[#a0a0a0]">現在の履歴件数: {historyCount.toLocaleString()} 件</p>
+      <p className="text-xs text-[#a0a0a0]">
+        移行済みの履歴件数: {migratedCount.toLocaleString()} 件
+      </p>
     </div>
   );
 }
