@@ -8,6 +8,8 @@ import type { PriceRequestLine } from "@/lib/types";
 export interface ExportRow extends PriceRequestLine {
   reqNo: number | null;
   approvedAt: string | null;
+  /** 既存レコード（mcframe 現行値）の有無。無い＝新規登録として出力される */
+  base: unknown | null;
 }
 
 /**
@@ -121,6 +123,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
               <th className="px-2 py-2.5 font-medium">適用開始</th>
               <th className="px-2 py-2.5 text-right font-medium">単価</th>
               <th className="px-2 py-2.5 text-right font-medium">改訂前</th>
+              <th className="px-2 py-2.5 font-medium">区分</th>
               <th className="px-2 py-2.5 font-medium">承認日</th>
               <th className="px-2 py-2.5 font-medium">出力状況</th>
             </tr>
@@ -151,6 +154,17 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
                 <td className="px-2 py-2 text-right font-mono font-semibold">{r.newPrice}</td>
                 <td className="px-2 py-2 text-right font-mono text-[#707070]">
                   {r.currentPrice ?? "—"}
+                </td>
+                <td className="px-2 py-2">
+                  {r.base ? (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                      改訂（既存項目を維持）
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                      新規登録
+                    </span>
+                  )}
                 </td>
                 <td className="px-2 py-2 text-xs">{fmtDate(r.approvedAt)}</td>
                 <td className="px-2 py-2">

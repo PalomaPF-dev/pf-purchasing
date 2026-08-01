@@ -1013,34 +1013,96 @@ export async function backfillHistoryNames(companyId: string): Promise<{ items: 
 
 // ===== MC取込CSV出力 =====
 
+/**
+ * MC取込に出力する既存レコードの値（mcframe から移行/前回登録された現行行）。
+ * 単価以外の項目は基幹側の登録内容をそのまま維持するために使う。
+ */
+export interface McBaseValues {
+  itemBranch: string | null;
+  itemName: string | null;
+  supplierName: string | null;
+  unitCd: string | null;
+  lotQty: number | null;
+  currency: string | null;
+  locCd: string | null;
+  dlvCd: string | null;
+  wgCd: string | null;
+  taxCd: string | null;
+  memo1: string | null;
+  memo2: string | null;
+  memo3: string | null;
+}
+
 export interface ExportableLine extends PriceRequestLine {
   reqNo: number | null;
   approvedAt: string | null;
+  /** 同一キーの直前の単価履歴（無ければ null＝新規登録品） */
+  base: McBaseValues | null;
 }
 
-/** 出力対象の承認済み明細（未出力 or すべて） */
+/**
+ * 出力対象の承認済み明細（未出力 or すべて）。
+ * 同一キー（品目・枝番・発注先・納入場所・納品先）の直前の単価履歴を併せて取得し、
+ * MC取込CSVでは単価・適用日以外の項目を既存値のまま維持できるようにする。
+ */
 export async function listExportableLines(
   companyId: string,
-  opts: { includeExported?: boolean; limit?: number } = {}
+  opts: { includeExported?: boolean; requestId?: string | null; limit?: number } = {}
 ): Promise<ExportableLine[]> {
   await ensureSchema();
   const sql = getSql();
   const includeExported = opts.includeExported ?? false;
+  const requestId = opts.requestId ?? null;
   const limit = Math.min(opts.limit ?? 1000, 5000);
   const rows = await sql`
     SELECT l.*, r.req_no,
       (SELECT MAX(a.created_at) FROM request_approvals a
-       WHERE a.request_id = r.id AND a.stage = 'dept' AND a.action = 'approve') AS approved_at
+       WHERE a.request_id = r.id AND a.stage = 'dept' AND a.action = 'approve') AS approved_at,
+      b.item_branch AS b_item_branch, b.item_name AS b_item_name, b.supplier_name AS b_supplier_name,
+      b.unit_cd AS b_unit_cd, b.lot_qty AS b_lot_qty, b.currency AS b_currency,
+      b.loc_cd AS b_loc_cd, b.dlv_cd AS b_dlv_cd, b.wg_cd AS b_wg_cd, b.tax_cd AS b_tax_cd,
+      b.memo1 AS b_memo1, b.memo2 AS b_memo2, b.memo3 AS b_memo3,
+      (b.id IS NOT NULL) AS has_base
     FROM price_request_lines l
     JOIN price_requests r ON r.id = l.request_id
+    LEFT JOIN LATERAL (
+      SELECT h.* FROM price_history h
+      WHERE h.company_id = l.company_id
+        AND h.item_cd = l.item_cd
+        AND COALESCE(h.item_branch, '*') = COALESCE(l.item_branch, '*')
+        AND h.supplier_cd = l.supplier_cd
+        AND COALESCE(h.loc_cd, '*') = COALESCE(l.loc_cd, '*')
+        AND COALESCE(h.dlv_cd, '*') = COALESCE(l.dlv_cd, '*')
+        AND h.start_date < l.start_date
+      ORDER BY h.start_date DESC
+      LIMIT 1
+    ) b ON true
     WHERE l.company_id = ${companyId} AND r.status = 'approved'
       AND (${includeExported} OR l.exported_at IS NULL)
+      AND (${requestId}::uuid IS NULL OR r.id = ${requestId}::uuid)
     ORDER BY r.req_no, l.seq
     LIMIT ${limit}`;
   return (rows as any[]).map((r) => ({
     ...mapLine(r),
     reqNo: r.req_no ?? null,
     approvedAt: r.approved_at ? tsStr(r.approved_at) : null,
+    base: r.has_base
+      ? {
+          itemBranch: r.b_item_branch ?? null,
+          itemName: r.b_item_name ?? null,
+          supplierName: r.b_supplier_name ?? null,
+          unitCd: r.b_unit_cd ?? null,
+          lotQty: num(r.b_lot_qty),
+          currency: r.b_currency ?? null,
+          locCd: r.b_loc_cd ?? null,
+          dlvCd: r.b_dlv_cd ?? null,
+          wgCd: r.b_wg_cd ?? null,
+          taxCd: r.b_tax_cd ?? null,
+          memo1: r.b_memo1 ?? null,
+          memo2: r.b_memo2 ?? null,
+          memo3: r.b_memo3 ?? null,
+        }
+      : null,
   }));
 }
 

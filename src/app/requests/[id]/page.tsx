@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { getRequest } from "@/lib/db";
 import { APPROVAL_STAGE_LABEL, REQUEST_STATUS_LABEL } from "@/lib/types";
@@ -63,6 +63,16 @@ export default async function RequestDetailPage({
               >
                 <Pencil className="h-4 w-4" />
                 編集
+              </Link>
+            )}
+            {/* 承認済みなら、この申請ぶんのMC取込CSVをそのまま出力できる */}
+            {request.status === "approved" && isAdmin && (
+              <Link
+                href={`/export?request=${request.id}`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[#e11d48] px-3 py-1.5 text-sm font-medium text-[#e11d48] hover:bg-[#fff1f2]"
+              >
+                <Download className="h-4 w-4" />
+                MC取込CSV出力
               </Link>
             )}
             <Link
