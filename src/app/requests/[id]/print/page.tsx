@@ -143,38 +143,53 @@ export default async function RequestPrintPage({
 
         {/* 明細（新単価 / 旧単価 の対比） */}
         <table className="print-table w-full border-collapse">
+          {/*
+            table-layout:fixed は「1行目のセル幅」だけで列幅を決めるため、
+            2段目（適用日・取消日など）に width を書いても効かず、colSpan の等分になってしまう。
+            列幅は colgroup で1列ずつ明示する（合計100%）。
+          */}
+          <colgroup>
+            {COL_WIDTHS.map((w, i) => (
+              <col key={i} style={{ width: w }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
-              <th className={`${th} w-[8%]`} rowSpan={2}>品番</th>
-              <th className={`${th} w-[3%]`} rowSpan={2}>納入場所</th>
-              <th className={`${th} w-[10%]`} rowSpan={2}>品名</th>
-              <th className={`${thNew} w-[20%]`} colSpan={4}>新 単 価</th>
-              <th className={`${thOld} w-[14%]`} colSpan={3}>旧 単 価</th>
-              <th className={`${thBd} w-[18%]`} colSpan={6}>単 価 差 の 内 訳</th>
-              <th className={`${thQty} w-[11%]`} colSpan={2}>月 当 た り</th>
-              <th className={`${th} w-[16%]`} rowSpan={2}>備考（改訂理由）</th>
+              <th className={th} rowSpan={2}>品番</th>
+              <th className={th} rowSpan={2}>納入場所</th>
+              <th className={th} rowSpan={2}>品名</th>
+              <th className={thNew} colSpan={4}>新 単 価</th>
+              <th className={thOld} colSpan={3}>旧 単 価</th>
+              <th className={thBd} colSpan={6}>単 価 差 の 内 訳</th>
+              <th className={thQty} colSpan={2}>月 当 た り</th>
+              <th className={th} rowSpan={2}>備考（改訂理由）</th>
             </tr>
             <tr>
-              <th className={`${thNew} w-[7%]`}>適用日</th>
-              <th className={`${thNew} w-[4.5%]`}>支給単価</th>
-              <th className={`${thNew} w-[4.5%]`}>単価</th>
-              <th className={`${thNew} w-[4%]`}>買入単価</th>
-              <th className={`${thOld} w-[7%]`}>取消日</th>
-              <th className={`${thOld} w-[3.5%]`}>単価</th>
-              <th className={`${thOld} w-[3.5%]`}>買入単価</th>
+              <th className={thNew}>適用日</th>
+              <th className={thNew}>支給単価</th>
+              <th className={thNew}>単価</th>
+              <th className={thNew}>買入単価</th>
+              <th className={thOld}>取消日</th>
+              <th className={thOld}>単価</th>
+              <th className={thOld}>買入単価</th>
               <th className={thBd}>支給材建値</th>
               <th className={thBd}>材料建値</th>
               <th className={thBd}>単価改定</th>
               <th className={thBd}>設計変更</th>
               <th className={thBd}>為替変動</th>
               <th className={thBd}>その他</th>
-              <th className={`${thQty} w-[5.5%]`}>数量</th>
-              <th className={`${thQty} w-[5.5%]`}>改訂影響額</th>
+              <th className={thQty}>数量</th>
+              <th className={thQty}>改訂影響額</th>
             </tr>
           </thead>
           <tbody>
             {lines.map((l) => {
               const isNew = l.currentPrice == null; // 旧単価なし = 新規登録品
+              const newPrice = formatPrice(l.newPrice);
+              const oldPrice = blank(l.currentPrice);
+              const imp = impact(l);
+              const impText = imp == null ? "" : imp.toLocaleString();
+              const qtyText = blank(l.monthlyQty);
               return (
                 <tr key={l.id}>
                   <td className={`${td} font-mono`}>
@@ -192,29 +207,33 @@ export default async function RequestPrintPage({
                   </td>
 
                   {/* 新単価 */}
-                  <td className={`${tdNew} text-center`}>{slashDate(l.startDate)}</td>
-                  <td className={`${tdNew} text-right`}>{blank(l.paidSupplyPrice)}</td>
-                  <td className={`${tdNew} text-right font-bold`}>{formatPrice(l.newPrice)}</td>
-                  <td className={`${tdNew} text-right`}>{formatPrice(l.newPrice)}</td>
+                  <td className={tdDate}>{slashDate(l.startDate)}</td>
+                  <NumTd cls={tdNew} v={blank(l.paidSupplyPrice)} />
+                  <NumTd cls={tdNew} v={newPrice} bold />
+                  <NumTd cls={tdNew} v={newPrice} />
 
                   {/* 旧単価（新規登録品は空欄） */}
-                  <td className={`${tdOld} text-center`}>{isNew ? "" : slashDate(dayBefore(l.startDate))}</td>
-                  <td className={`${tdOld} text-right`}>{blank(l.currentPrice)}</td>
-                  <td className={`${tdOld} text-right`}>{blank(l.currentPrice)}</td>
+                  <td className={`${tdDate} text-slate-600`}>
+                    {isNew ? "" : slashDate(dayBefore(l.startDate))}
+                  </td>
+                  <NumTd cls={tdOld} v={oldPrice} />
+                  <NumTd cls={tdOld} v={oldPrice} />
 
                   {/* 単価差の内訳（改訂理由別） */}
-                  <td className={`${tdBd} text-right`}>{blank(l.bdSupplyMat)}</td>
-                  <td className={`${tdBd} text-right`}>{blank(l.bdMaterial)}</td>
-                  <td className={`${tdBd} text-right`}>{blank(l.bdRevision)}</td>
-                  <td className={`${tdBd} text-right`}>{blank(l.bdDesign)}</td>
-                  <td className={`${tdBd} text-right`}>{blank(l.bdForex)}</td>
-                  <td className={`${tdBd} text-right`}>{blank(l.bdOther)}</td>
+                  {[l.bdSupplyMat, l.bdMaterial, l.bdRevision, l.bdDesign, l.bdForex, l.bdOther].map(
+                    (v, i) => {
+                      const s = blank(v);
+                      return (
+                        <td key={i} className={`${tdBd} ${bdFont(s)}`}>
+                          {s}
+                        </td>
+                      );
+                    }
+                  )}
 
                   {/* 月当たり数量と単価改訂の影響額 */}
-                  <td className={`${tdQty} text-right`}>{blank(l.monthlyQty)}</td>
-                  <td className={`${tdQty} text-right font-bold`}>
-                    {impact(l) == null ? "" : (impact(l) as number).toLocaleString()}
-                  </td>
+                  <NumTd cls={tdQty} v={qtyText} />
+                  <NumTd cls={tdQty} v={impText} bold />
 
                   <td className={`${td} text-[9px] leading-tight`}>
                     {isNew ? "新規登録" : ""}
@@ -230,8 +249,8 @@ export default async function RequestPrintPage({
                 <td className={`${td} text-right font-bold`} colSpan={16}>
                   月当たり合計
                 </td>
-                <td className={`${tdQty} text-right`}>{blank(totalQty)}</td>
-                <td className={`${tdQty} text-right font-bold`}>{totalImpact.toLocaleString()}</td>
+                <NumTd cls={tdQty} v={blank(totalQty)} />
+                <NumTd cls={tdQty} v={totalImpact.toLocaleString()} bold />
                 <td className={`${td} text-[9px]`}>
                   年換算 {(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}
                 </td>
@@ -259,20 +278,84 @@ const thOld =
 const thQty =
   "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
 const tdQty =
-  "print-keep-bg whitespace-nowrap border border-slate-400 bg-amber-50/50 px-1 py-1 text-[10px] font-mono";
+  "print-keep-bg whitespace-nowrap border border-slate-400 bg-amber-50/50 px-1 py-1 font-mono text-right";
 const thBd =
   "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
 const td = "border border-slate-400 px-1.5 py-1 text-[10px] align-top";
-const tdNew = "whitespace-nowrap border border-slate-400 px-1 py-1 text-[10px] font-mono align-top";
-const tdOld =
-  "whitespace-nowrap border border-slate-400 px-1 py-1 text-[10px] font-mono align-top text-slate-600";
+/** 数値セルの土台（文字サイズは桁数に応じて numFont で付ける） */
+const tdNum = "whitespace-nowrap border border-slate-400 px-1 py-1 font-mono align-top text-right";
+const tdNew = tdNum;
+const tdOld = `${tdNum} text-slate-600`;
+/** 内訳は6列と細いので一段小さく詰めて印字する */
 const tdBd =
-  "whitespace-nowrap border border-slate-400 px-1 py-1 text-[10px] font-mono align-top text-amber-900";
+  "whitespace-nowrap border border-slate-400 px-0.5 py-1 font-mono align-top tracking-tighter text-right text-amber-900";
+/**
+ * 日付セル。列幅内に必ず収まるよう文字を詰め、万一あふれても
+ * 隣のセル（単価）に重ならないよう切り落とす。
+ */
+const tdDate =
+  "whitespace-nowrap overflow-hidden border border-slate-400 px-0.5 py-1 text-[9px] font-mono align-top text-center tracking-tighter";
 
-/** 帳票用の日付（YYYY/MM/DD 固定幅。折り返さずに1行で収まる） */
+/**
+ * 明細テーブルの列幅（19列・合計100%）。
+ * table-layout:fixed は「1行目のセル」だけで列幅を決めるため、
+ * 2段目に width を書いても効かない。colgroup でここに一元管理する。
+ * 日付列は `26/08/01`（9px等幅＋詰め）が切れずに収まる幅を確保している。
+ */
+const COL_WIDTHS = [
+  "7.5%", // 品番
+  "2.5%", // 納入場所
+  "10%", // 品名
+  "5.5%", // 適用日
+  "5%", // 支給単価
+  "5.5%", // 新単価
+  "5.5%", // 新買入単価
+  "5.5%", // 取消日
+  "5%", // 旧単価
+  "5%", // 旧買入単価
+  "3.4%", // 支給材建値
+  "3.4%", // 材料建値
+  "3.4%", // 単価改定
+  "3.4%", // 設計変更
+  "3.4%", // 為替変動
+  "3.4%", // その他
+  "5%", // 月当たり数量
+  "5.5%", // 改訂影響額
+  "12.1%", // 備考
+];
+
+/**
+ * 桁数に応じた文字サイズ。折り返しも隣接セルへのはみ出しもさせず、
+ * 桁の多い単価だけを小さく印字して列幅に収める。
+ */
+function numFont(v: string): string {
+  if (v.length <= 7) return "text-[10px]";
+  if (v.length <= 8) return "text-[9px]";
+  if (v.length <= 9) return "text-[8px]";
+  return "text-[7px] tracking-tighter";
+}
+
+/** 内訳（細い6列）用。土台が1段小さい */
+function bdFont(v: string): string {
+  if (v.length <= 6) return "text-[8px]";
+  if (v.length <= 8) return "text-[7px]";
+  return "text-[6px]";
+}
+
+/**
+ * 帳票用の日付。列幅が限られるため西暦は下2桁（`2026-08-01` → `26/08/01`）。
+ * 折り返さず1行で収める。
+ */
 function slashDate(v: string | null | undefined): string {
   if (!v) return "";
-  return v.slice(0, 10).replace(/-/g, "/");
+  const [y, m, d] = v.slice(0, 10).split("-");
+  if (!y || !m || !d) return "";
+  return `${y.slice(2)}/${m}/${d}`;
+}
+
+/** 数値セル（桁数に応じて文字サイズを自動で落とす） */
+function NumTd({ cls, v, bold = false }: { cls: string; v: string; bold?: boolean }) {
+  return <td className={`${cls} ${numFont(v)}${bold ? " font-bold" : ""}`}>{v}</td>;
 }
 
 /** 未設定は空欄（帳票では 0 と区別する） */

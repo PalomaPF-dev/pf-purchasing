@@ -10,10 +10,10 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { dashboardStats, getWfSettings, listRequests, listPrices } from "@/lib/db";
+import { dashboardStats, getWfSettings, listRequests } from "@/lib/db";
 import { hasDatabase } from "@/lib/neon";
 import { REQUEST_STATUS_LABEL } from "@/lib/types";
-import { formatDate, formatDateTime, formatPrice } from "@/lib/format";
+import { formatDateTime } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 
 export const dynamic = "force-dynamic";
@@ -46,12 +46,11 @@ export default async function DashboardPage({
 
   // 一般（バイヤー）は自分の担当取引先の範囲だけを表示する
   const scope = supplierScopeOf(session);
-  const [stats, wf, myRequests, awaiting, recent] = await Promise.all([
+  const [stats, wf, myRequests, awaiting] = await Promise.all([
     dashboardStats(companyId),
     getWfSettings(companyId),
     listRequests(companyId, { applicantLoginId: loginId, buyerLoginId: scope.buyerLoginId, limit: 5 }),
     isAdmin ? listRequests(companyId, { status: "awaiting", limit: 5 }) : Promise.resolve([]),
-    listPrices(companyId, { buyerLoginId: scope.buyerLoginId, limit: 8 }),
   ]);
 
   const cards = [
@@ -182,54 +181,6 @@ export default async function DashboardPage({
           )}
         </section>
 
-        {/* 最近の単価改訂 */}
-        <section className="rounded-xl border border-[#e5e5e5] bg-white lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
-            <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
-              <History className="h-4 w-4 text-[#e11d48]" />
-              単価履歴（最新）
-            </h2>
-            <Link href="/prices" className="flex items-center gap-1 text-xs text-[#e11d48] hover:underline">
-              単価履歴を見る <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-          {recent.rows.length === 0 ? (
-            <p className="px-4 py-6 text-sm text-[#707070]">
-              単価データがありません。<Link href="/migrate" className="text-[#e11d48] hover:underline">データ移行</Link>から現行の単価履歴を取り込めます。
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
-                    <th className="px-4 py-2 font-medium">品目CD</th>
-                    <th className="px-2 py-2 font-medium">品名</th>
-                    <th className="px-2 py-2 font-medium">取引先</th>
-                    <th className="px-2 py-2 text-right font-medium">単価</th>
-                    <th className="px-2 py-2 font-medium">適用開始</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {recent.rows.map((p) => (
-                    <tr key={p.id} className="border-b border-[#f5f5f5]">
-                      <td className="px-4 py-2 font-mono">
-                        <Link href={`/prices/${encodeURIComponent(p.itemCd)}?supplier=${encodeURIComponent(p.supplierCd)}`} className="text-[#e11d48] hover:underline">
-                          {p.itemCd}
-                        </Link>
-                      </td>
-                      <td className="px-2 py-2">{p.itemName || "—"}</td>
-                      <td className="px-2 py-2">
-                        <span className="font-mono">{p.supplierCd}</span> {p.supplierName ?? ""}
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono">{formatPrice(p.price)}</td>
-                      <td className="px-2 py-2">{formatDate(p.startDate)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
       </div>
 
       {/* マスタ状況（管理者向けフッタ） */}
