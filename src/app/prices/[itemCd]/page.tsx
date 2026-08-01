@@ -3,7 +3,36 @@ import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/session";
 import { priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
+import type { PriceHistoryRow } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
+
+/** 単価差の要因（内訳）をタグ表示。値のある要因だけを出す。 */
+function BreakdownTags({ row }: { row: PriceHistoryRow }) {
+  const items: [string, number | null][] = [
+    ["支給材建値", row.bdSupplyMat],
+    ["材料建値", row.bdMaterial],
+    ["単価改定", row.bdRevision],
+    ["設計変更", row.bdDesign],
+    ["為替変動", row.bdForex],
+    ["その他", row.bdOther],
+  ];
+  const shown = items.filter(([, v]) => v != null && v !== 0);
+  if (shown.length === 0) return <span className="text-[#c0c0c0]">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {shown.map(([label, v]) => (
+        <span
+          key={label}
+          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+            (v as number) > 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          {label} {formatDiff(v)}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +118,8 @@ export default async function PriceHistoryPage({
                         <th className="px-2 py-2 text-right font-medium">単価</th>
                         <th className="px-2 py-2 text-right font-medium">改訂前</th>
                         <th className="px-2 py-2 text-right font-medium">差額</th>
-                        <th className="px-2 py-2 font-medium">改訂理由</th>
+                        <th className="px-2 py-2 font-medium">単価差の要因（内訳）</th>
+                        <th className="px-2 py-2 font-medium">備考（改訂理由）</th>
                         <th className="px-2 py-2 font-medium">出所</th>
                       </tr>
                     </thead>
@@ -123,11 +153,17 @@ export default async function PriceHistoryPage({
                             >
                               {formatDiff(diff)}
                             </td>
+                            <td className="px-2 py-2 text-xs">
+                              <BreakdownTags row={r} />
+                            </td>
                             <td className="px-2 py-2 text-xs">{r.reason ?? "—"}</td>
                             <td className="px-2 py-2 text-xs">
                               {reqId ? (
                                 <Link href={`/requests/${reqId}`} className="text-[#e11d48] hover:underline">
-                                  申請を見る
+                                  {r.reqNo != null ? `申請 #${r.reqNo}` : "申請を見る"}
+                                  {r.applicantName ? (
+                                    <span className="block text-[10px] text-[#a0a0a0]">{r.applicantName}</span>
+                                  ) : null}
                                 </Link>
                               ) : r.source === "migration" ? (
                                 <span className="text-[#a0a0a0]">移行データ</span>

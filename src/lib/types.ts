@@ -137,7 +137,19 @@ export interface PriceHistoryRow {
   price: number;
   priceBefore: number | null;
   taxCd: string | null;
+  /** 備考（改訂理由の記述） */
   reason: string | null;
+  /** 単価差の要因（改訂理由別の内訳）。移行データは null */
+  bdSupplyMat: number | null;
+  bdMaterial: number | null;
+  bdRevision: number | null;
+  bdDesign: number | null;
+  bdForex: number | null;
+  bdOther: number | null;
+  /** どの申請による改訂か（移行データは null） */
+  reqNo: number | null;
+  applicantName: string | null;
+  approvedAt: string | null;
   source: "migration" | "approval";
   requestLineId: string | null;
   createdAt: string;

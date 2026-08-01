@@ -197,6 +197,18 @@ async function buildSchema(): Promise<void> {
       memo3           TEXT,
       created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
+  // 単価差の要因（改訂理由別の内訳）。承認時に申請明細から転記し、履歴として残す。
+  // 移行データには存在しないため NULL 許容。reason（備考）と合わせて改訂理由の記録になる。
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_supply_mat DOUBLE PRECISION`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_material DOUBLE PRECISION`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_revision DOUBLE PRECISION`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_design DOUBLE PRECISION`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_forex DOUBLE PRECISION`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_other DOUBLE PRECISION`);
+  // 申請情報（誰の・どの申請による改訂か）を履歴からたどれるようにする
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS req_no INTEGER`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS applicant_name TEXT`);
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_item_idx ON price_history(company_id, item_cd, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_supplier_idx ON price_history(company_id, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_start_idx ON price_history(company_id, start_date DESC)`);

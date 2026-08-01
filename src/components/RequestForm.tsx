@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { FileUp, Plus, Search, Trash2 } from "lucide-react";
 import { createRequestAction, updateRequestAction } from "@/lib/actions";
 import QuoteImport, { type QuoteAppliedLine } from "@/components/QuoteImport";
+import SupplierPicker, { type PickedSupplier } from "@/components/SupplierPicker";
+import ItemPicker, { type PickedItem } from "@/components/ItemPicker";
 import type { LineInput, PriceRequestLine } from "@/lib/types";
 
 /** フォーム上の明細行（文字列で保持し、送信時に数値化） */
@@ -185,6 +187,27 @@ export default function RequestForm({
   const [saving, setSaving] = useState<"none" | "draft" | "submit">("none");
   // 見積書取り込みパネルの開閉（新規作成時は既定で開く）
   const [showQuoteImport, setShowQuoteImport] = useState(!requestId);
+  // 発注先（申請の対象）。編集時は既存明細から復元する
+  const [supplier, setSupplier] = useState<PickedSupplier | null>(() => {
+    const first = initialLines?.[0];
+    return first?.supplierCd
+      ? { code: first.supplierCd, name: first.supplierName ?? "" }
+      : null;
+  });
+
+  /** 品目候補から選択したときに、品名・単位・ロット・納入場所・現行単価をまとめて反映 */
+  function pickItem(i: number, it: PickedItem) {
+    update(i, {
+      itemCd: it.code,
+      itemBranch: it.branch ?? "",
+      itemName: it.name,
+      unitCd: it.unitCd ?? "",
+      lotQty: it.lotQty != null ? String(it.lotQty) : "",
+      locCd: it.locCd ?? "",
+      dlvCd: it.dlvCd ?? "",
+      currentPrice: it.currentPrice != null ? String(it.currentPrice) : "",
+    });
+  }
 
   function update(i: number, patch: Partial<FormLine>) {
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -198,18 +221,22 @@ export default function RequestForm({
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
   }
 
-  /** 現行単価を単価履歴から自動取得 */
+  /** 現行単価（旧単価）を単価履歴から自動取得。発注先は申請の発注先を使う。 */
   async function fetchCurrent(i: number) {
     const l = lines[i];
-    if (!l.itemCd || !l.supplierCd) {
-      setError("現行単価の取得には品目CDと発注先CDが必要です。");
+    if (!supplier) {
+      setError("先に発注先を選択してください。");
+      return;
+    }
+    if (!l.itemCd) {
+      setError(`明細${i + 1}: 品目CDを入力してください。`);
       return;
     }
     setError("");
     const qs = new URLSearchParams({
       type: "current",
       item: l.itemCd,
-      supplier: l.supplierCd,
+      supplier: supplier.code,
     });
     if (l.itemBranch) qs.set("branch", l.itemBranch);
     if (l.locCd) qs.set("loc", l.locCd);
@@ -222,37 +249,9 @@ export default function RequestForm({
         unitCd: lines[i].unitCd || (data.current.unitCd ?? ""),
         lotQty: lines[i].lotQty || (data.current.lotQty != null ? String(data.current.lotQty) : ""),
         itemName: lines[i].itemName || (data.current.itemName ?? ""),
-        supplierName: lines[i].supplierName || (data.current.supplierName ?? ""),
       });
     } else {
       setError(`明細${i + 1}: 単価履歴に現行単価が見つかりませんでした（新規品目の場合はそのまま申請できます）。`);
-    }
-  }
-
-  /** 品番マスタから補完（品目CD確定時） */
-  async function lookupItem(i: number) {
-    const l = lines[i];
-    if (!l.itemCd) return;
-    const res = await fetch(`/api/lookup?type=items&q=${encodeURIComponent(l.itemCd)}`);
-    const data = await res.json().catch(() => ({}));
-    const hit = (data.items ?? []).find(
-      (it: { code: string; branch: string | null }) =>
-        it.code === l.itemCd && (it.branch ?? "") === (l.itemBranch || "")
-    ) ?? (data.items ?? [])[0];
-    if (hit && !l.itemName) {
-      update(i, { itemName: hit.name ?? "", unitCd: l.unitCd || (hit.unitCd ?? "") });
-    }
-  }
-
-  /** 取引先マスタから補完 */
-  async function lookupSupplier(i: number) {
-    const l = lines[i];
-    if (!l.supplierCd) return;
-    const res = await fetch(`/api/lookup?type=suppliers&q=${encodeURIComponent(l.supplierCd)}`);
-    const data = await res.json().catch(() => ({}));
-    const hit = (data.suppliers ?? []).find((s: { code: string }) => s.code === l.supplierCd) ?? (data.suppliers ?? [])[0];
-    if (hit && !l.supplierName) {
-      update(i, { supplierName: hit.name ?? "" });
     }
   }
 
@@ -282,11 +281,17 @@ export default function RequestForm({
 
   async function save(submit: boolean) {
     setError("");
+    if (!supplier) return setError("発注先を選択してください。");
+    // 明細の発注先は申請の発注先で統一する（単価申請は発注先ごとに作成する）
+    const payloadLines: FormLine[] = lines.map((l) => ({
+      ...l,
+      supplierCd: supplier.code,
+      supplierName: supplier.name,
+    }));
     // 入力チェック（サーバー側でも検証するが、先にわかりやすく）
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
+    for (let i = 0; i < payloadLines.length; i++) {
+      const l = payloadLines[i];
       if (!l.itemCd.trim()) return setError(`明細${i + 1}: 品目CDを入力してください。`);
-      if (!l.supplierCd.trim()) return setError(`明細${i + 1}: 発注先CDを入力してください。`);
       if (!l.startDate) return setError(`明細${i + 1}: 適用開始日を入力してください。`);
       if (toNum(l.newPrice) == null) return setError(`明細${i + 1}: 購入単価を数値で入力してください。`);
       const d = diffOf(l);
@@ -303,14 +308,14 @@ export default function RequestForm({
         await updateRequestAction({
           requestId,
           title: title.trim() || null,
-          lines: toPayload(lines),
+          lines: toPayload(payloadLines),
           submit,
         });
         router.push(`/requests/${requestId}`);
       } else {
         const { id } = await createRequestAction({
           title: title.trim() || null,
-          lines: toPayload(lines),
+          lines: toPayload(payloadLines),
           submit,
         });
         router.push(`/requests/${id}`);
@@ -328,6 +333,20 @@ export default function RequestForm({
 
   return (
     <div className="space-y-4">
+      {/* ① 発注先の選択（単価申請は発注先ごと） */}
+      <SupplierPicker
+        value={supplier}
+        onChange={(s) => {
+          setSupplier(s);
+          // 発注先を変えたら、明細の発注先も追随させる（品目は選び直す前提で残す）
+          if (s) {
+            setLines((prev) =>
+              prev.map((l) => ({ ...l, supplierCd: s.code, supplierName: s.name }))
+            );
+          }
+        }}
+      />
+
       {/* ツールバー: タイトル + 見積書AI取り込み */}
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-[#e5e5e5] bg-white p-4">
         <div className="min-w-64 flex-1">
@@ -354,7 +373,19 @@ export default function RequestForm({
       {/* 見積書のAI取り込み（複数ファイル・プレビュー確認後に明細へ反映） */}
       {showQuoteImport && <QuoteImport today={today} onApply={applyQuoteLines} />}
 
-      {/* 明細 */}
+      {/* 明細（発注先を選ぶまでは入力させない） */}
+      {!supplier ? (
+        <div className="rounded-xl border border-dashed border-[#d5d5d5] bg-white p-8 text-center text-sm text-[#707070]">
+          先に発注先を選択してください。選択すると、その発注先の取引品目から明細を入力できます。
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#e11d48] text-xs font-bold text-white">
+              2
+            </span>
+            <h2 className="text-sm font-bold text-[#333333]">品目と単価を入力してください</h2>
+          </div>
       {lines.map((l, i) => {
         const d = diffOf(l);
         const s = bdSum(l);
@@ -375,14 +406,13 @@ export default function RequestForm({
             </div>
 
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-              <div>
-                <label className={labelCls}>品目CD *</label>
-                <input
-                  className={`${inputCls} font-mono`}
+              <div className="col-span-2">
+                <label className={labelCls}>品目CD *（発注先の取引品目から選択）</label>
+                <ItemPicker
+                  supplierCd={supplier?.code ?? ""}
                   value={l.itemCd}
-                  onChange={(e) => update(i, { itemCd: e.target.value })}
-                  onBlur={() => void lookupItem(i)}
-                  placeholder="097384000"
+                  onTextChange={(code) => update(i, { itemCd: code })}
+                  onPick={(it) => pickItem(i, it)}
                 />
               </div>
               <div>
@@ -401,25 +431,6 @@ export default function RequestForm({
                   value={l.itemName}
                   onChange={(e) => update(i, { itemName: e.target.value })}
                   placeholder="タクトスイッチ"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>発注先CD *</label>
-                <input
-                  className={`${inputCls} font-mono`}
-                  value={l.supplierCd}
-                  onChange={(e) => update(i, { supplierCd: e.target.value })}
-                  onBlur={() => void lookupSupplier(i)}
-                  placeholder="00906"
-                />
-              </div>
-              <div>
-                <label className={labelCls}>発注先名</label>
-                <input
-                  className={inputCls}
-                  value={l.supplierName}
-                  onChange={(e) => update(i, { supplierName: e.target.value })}
-                  placeholder="北陸電気工業㈱"
                 />
               </div>
 
@@ -628,14 +639,16 @@ export default function RequestForm({
         );
       })}
 
-      <button
-        type="button"
-        onClick={addLine}
-        className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#c5c5c5] px-4 py-2 text-sm text-[#555555] hover:border-[#e11d48] hover:text-[#e11d48]"
-      >
-        <Plus className="h-4 w-4" />
-        明細を追加
-      </button>
+          <button
+            type="button"
+            onClick={addLine}
+            className="inline-flex items-center gap-2 rounded-lg border border-dashed border-[#c5c5c5] px-4 py-2 text-sm text-[#555555] hover:border-[#e11d48] hover:text-[#e11d48]"
+          >
+            <Plus className="h-4 w-4" />
+            明細を追加
+          </button>
+        </>
+      )}
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

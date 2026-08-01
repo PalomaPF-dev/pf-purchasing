@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionWithRole } from "@/lib/session";
-import { currentPriceFor, searchItems, searchSuppliers } from "@/lib/db";
+import {
+  currentPriceFor,
+  searchActiveSuppliers,
+  searchItems,
+  searchSupplierItems,
+  searchSuppliers,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +37,22 @@ export async function GET(req: NextRequest) {
       if (!q) return NextResponse.json({ suppliers: [] });
       const suppliers = await searchSuppliers(session.companyId, q);
       return NextResponse.json({ suppliers });
+    }
+    // 申請の起点: 発注先の選択候補（取引品目数つき。q 空でも先頭を返す）
+    if (type === "supplier-picker") {
+      const suppliers = await searchActiveSuppliers(session.companyId, (sp.get("q") ?? "").trim());
+      return NextResponse.json({ suppliers });
+    }
+    // 発注先を選んだ後の品目候補（単価履歴ベース。品名・単位・現行単価つき）
+    if (type === "supplier-items") {
+      const supplier = (sp.get("supplier") ?? "").trim();
+      if (!supplier) return NextResponse.json({ items: [] });
+      const items = await searchSupplierItems(
+        session.companyId,
+        supplier,
+        (sp.get("q") ?? "").trim()
+      );
+      return NextResponse.json({ items });
     }
     if (type === "current") {
       const item = (sp.get("item") ?? "").trim();
