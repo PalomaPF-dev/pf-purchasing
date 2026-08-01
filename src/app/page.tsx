@@ -9,8 +9,8 @@ import {
   Plus,
   ArrowRight,
 } from "lucide-react";
-import { requireSession } from "@/lib/session";
-import { dashboardStats, listRequests, listPrices } from "@/lib/db";
+import { requireSession, supplierScopeOf } from "@/lib/session";
+import { dashboardStats, getWfSettings, listRequests, listPrices } from "@/lib/db";
 import { hasDatabase } from "@/lib/neon";
 import { REQUEST_STATUS_LABEL } from "@/lib/types";
 import { formatDate, formatDateTime, formatPrice } from "@/lib/format";
@@ -44,16 +44,21 @@ export default async function DashboardPage({
   const { companyId, role, loginId } = session;
   const isAdmin = role === "admin";
 
-  const [stats, myRequests, awaiting, recent] = await Promise.all([
+  // 一般（バイヤー）は自分の担当発注先の範囲だけを表示する
+  const scope = supplierScopeOf(session);
+  const [stats, wf, myRequests, awaiting, recent] = await Promise.all([
     dashboardStats(companyId),
-    listRequests(companyId, { applicantLoginId: loginId, limit: 5 }),
+    getWfSettings(companyId),
+    listRequests(companyId, { applicantLoginId: loginId, buyerLoginId: scope.buyerLoginId, limit: 5 }),
     isAdmin ? listRequests(companyId, { status: "awaiting", limit: 5 }) : Promise.resolve([]),
-    listPrices(companyId, { limit: 8 }),
+    listPrices(companyId, { buyerLoginId: scope.buyerLoginId, limit: 8 }),
   ]);
 
   const cards = [
-    { label: "MGR承認待ち", value: stats.pendingCount, href: "/approvals", accent: "text-amber-600" },
-    { label: "部門長承認待ち", value: stats.mgrApprovedCount, href: "/approvals", accent: "text-amber-600" },
+    { label: `${wf.mgrLabel}承認待ち`, value: stats.pendingCount, href: "/approvals", accent: "text-amber-600" },
+    ...(wf.stages === 2
+      ? [{ label: `${wf.deptLabel}承認待ち`, value: stats.mgrApprovedCount, href: "/approvals", accent: "text-amber-600" }]
+      : []),
     { label: "今月の承認済", value: stats.approvedThisMonth, href: "/requests?status=approved", accent: "text-emerald-600" },
     { label: "MC未出力明細", value: stats.unexportedCount, href: "/export", accent: "text-rose-600" },
   ];
@@ -202,7 +207,6 @@ export default async function DashboardPage({
                     <th className="px-2 py-2 font-medium">発注先</th>
                     <th className="px-2 py-2 text-right font-medium">単価</th>
                     <th className="px-2 py-2 font-medium">適用開始</th>
-                    <th className="px-2 py-2 font-medium">適用終了</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -219,7 +223,6 @@ export default async function DashboardPage({
                       </td>
                       <td className="px-2 py-2 text-right font-mono">{formatPrice(p.price)}</td>
                       <td className="px-2 py-2">{formatDate(p.startDate)}</td>
-                      <td className="px-2 py-2">{formatDate(p.endDate)}</td>
                     </tr>
                   ))}
                 </tbody>
