@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
-import { requireSession } from "@/lib/session";
+import { requireSession, supplierScopeOf } from "@/lib/session";
 import { listRequests } from "@/lib/db";
 import { REQUEST_STATUS_LABEL, type RequestStatus } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -28,9 +28,12 @@ export default async function RequestsPage({
   const mine = sp.mine === "1";
   const q = sp.q ?? "";
 
+  // 一般（バイヤー）は自分の担当発注先を含む申請のみ
+  const scope = supplierScopeOf(session);
   const requests = await listRequests(session.companyId, {
     status: status || null,
     applicantLoginId: mine ? session.loginId : null,
+    buyerLoginId: scope.buyerLoginId,
     q: q || null,
   });
 

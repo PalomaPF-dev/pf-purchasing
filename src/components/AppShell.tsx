@@ -24,7 +24,8 @@ const NAV: NavItem[] = [
   { href: "/approvals", label: "承認", icon: Stamp, adminOnly: true },
   { href: "/prices", label: "単価履歴", icon: History },
   { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
-  { href: "/suppliers", label: "取引先マスタ", icon: Building2, adminOnly: true },
+  // 一般（バイヤー）は自分の担当発注先のみ閲覧できる
+  { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
   { href: "/import", label: "一括取込", icon: Upload, adminOnly: true },
   { href: "/export", label: "MC取込出力", icon: Download, adminOnly: true },
   // 運用開始時の1回限りの作業（日常運用では使わない）

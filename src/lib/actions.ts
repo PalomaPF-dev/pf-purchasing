@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireSession, requireAdminSession } from "./session";
+import { requireSession, requireAdminSession, supplierScopeOf } from "./session";
 import {
   addRequestMessage,
   approveRequest,
   backfillHistoryNames,
+  canAccessSupplier,
   createRequest,
   deleteItem,
   deleteRequest,
@@ -14,10 +15,29 @@ import {
   rejectRequest,
   submitRequest,
   updateDraftRequest,
+  setSupplierBuyer,
   upsertItem,
   upsertSupplier,
 } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
+
+/**
+ * 明細の発注先がログイン中ユーザーの担当かをサーバー側で検証する。
+ * 一般（バイヤー）は担当外の発注先に申請できない（UIでも選べないが必ず防ぐ）。
+ */
+async function assertSupplierAllowed(
+  s: { companyId: string; role: "admin" | "member"; loginId: string | null },
+  lines: LineInput[]
+): Promise<void> {
+  const scope = supplierScopeOf(s);
+  if (!scope.restricted) return;
+  const codes = [...new Set(lines.map((l) => (l.supplierCd ?? "").trim()).filter(Boolean))];
+  for (const code of codes) {
+    if (!(await canAccessSupplier(s.companyId, code, scope.buyerLoginId))) {
+      throw new Error(`発注先 ${code} はあなたの担当ではありません。担当の発注先のみ申請できます。`);
+    }
+  }
+}
 
 /* ===== 申請 ===== */
 
@@ -28,6 +48,7 @@ export async function createRequestAction(payload: {
   submit: boolean;
 }): Promise<{ id: string }> {
   const s = await requireSession();
+  await assertSupplierAllowed(s, payload.lines);
   const id = await createRequest(
     s.companyId,
     { title: payload.title, lines: payload.lines },
@@ -48,6 +69,7 @@ export async function updateRequestAction(payload: {
   submit: boolean;
 }): Promise<void> {
   const s = await requireSession();
+  await assertSupplierAllowed(s, payload.lines);
   await updateDraftRequest(s.companyId, payload.requestId, {
     title: payload.title,
     lines: payload.lines,
@@ -152,7 +174,15 @@ export async function upsertSupplierAction(formData: FormData): Promise<void> {
     code,
     name,
     notes: String(formData.get("notes") ?? "").trim() || null,
+    buyerLoginId: String(formData.get("buyerLoginId") ?? "").trim() || null,
   });
+  revalidatePath("/suppliers");
+}
+
+/** 担当バイヤーの割当・解除（管理者のみ）。空文字で未割当に戻す。 */
+export async function setSupplierBuyerAction(id: string, buyerLoginId: string): Promise<void> {
+  const s = await requireAdminSession();
+  await setSupplierBuyer(s.companyId, id, buyerLoginId.trim() || null);
   revalidatePath("/suppliers");
 }
 

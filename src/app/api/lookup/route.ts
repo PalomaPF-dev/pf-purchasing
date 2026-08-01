@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionWithRole } from "@/lib/session";
+import { getSessionWithRole, supplierScopeOf } from "@/lib/session";
 import {
+  canAccessSupplier,
   currentPriceFor,
   searchActiveSuppliers,
   searchItems,
@@ -40,13 +41,24 @@ export async function GET(req: NextRequest) {
     }
     // 申請の起点: 発注先の選択候補（取引品目数つき。q 空でも先頭を返す）
     if (type === "supplier-picker") {
-      const suppliers = await searchActiveSuppliers(session.companyId, (sp.get("q") ?? "").trim());
+      // 一般（バイヤー）は自分の担当発注先のみ
+      const scope = supplierScopeOf(session);
+      const suppliers = await searchActiveSuppliers(
+        session.companyId,
+        (sp.get("q") ?? "").trim(),
+        scope.buyerLoginId
+      );
       return NextResponse.json({ suppliers });
     }
     // 発注先を選んだ後の品目候補（単価履歴ベース。品名・単位・現行単価つき）
     if (type === "supplier-items") {
       const supplier = (sp.get("supplier") ?? "").trim();
       if (!supplier) return NextResponse.json({ items: [] });
+      // 担当外の発注先の品目は返さない
+      const scope = supplierScopeOf(session);
+      if (!(await canAccessSupplier(session.companyId, supplier, scope.buyerLoginId))) {
+        return NextResponse.json({ items: [] });
+      }
       const items = await searchSupplierItems(
         session.companyId,
         supplier,
@@ -58,6 +70,10 @@ export async function GET(req: NextRequest) {
       const item = (sp.get("item") ?? "").trim();
       const supplier = (sp.get("supplier") ?? "").trim();
       if (!item || !supplier) return NextResponse.json({ current: null });
+      const scope = supplierScopeOf(session);
+      if (!(await canAccessSupplier(session.companyId, supplier, scope.buyerLoginId))) {
+        return NextResponse.json({ current: null });
+      }
       const current = await currentPriceFor(session.companyId, item, supplier, {
         branch: sp.get("branch") || null,
         locCd: sp.get("loc") || null,

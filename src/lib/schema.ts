@@ -63,6 +63,10 @@ async function buildSchema(): Promise<void> {
       UNIQUE (company_id, code)
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_company_idx ON suppliers(company_id)`);
+  // 担当バイヤー（社員番号 = users.login_id）。一般ユーザーは自分の担当発注先のみ
+  // 閲覧・申請できる。NULL = 未割当（管理者のみが扱える）。
+  await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS buyer_login_id TEXT`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_buyer_idx ON suppliers(company_id, buyer_login_id)`);
 
   // 品番（品目）マスタ。branch は mcframe の枝番1（既定 '*'＝枝番なし）
   await safeDdl(() => sql`

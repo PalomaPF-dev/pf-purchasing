@@ -23,7 +23,7 @@ const PRICE_HEADERS = [
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
 const ITEM_HEADERS = ["品目CD", "枝番", "品名", "単位CD", "仕入税CD", "備考"];
-const SUPPLIER_HEADERS = ["発注先CD", "発注先名", "備考"];
+const SUPPLIER_HEADERS = ["発注先CD", "発注先名", "担当バイヤー社員番号", "備考"];
 
 /** テンプレートCSVのダウンロード */
 export async function GET(req: Request) {
@@ -186,6 +186,7 @@ export async function POST(req: Request) {
           code,
           name: get(r, "発注先名"),
           notes: get(r, "備考") || null,
+          buyerLoginId: get(r, "担当バイヤー社員番号") || null,
         });
         count++;
       }

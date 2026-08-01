@@ -174,4 +174,6 @@ export interface Supplier {
   name: string;
   notes: string | null;
   active: boolean;
+  /** 担当バイヤーの社員番号。null = 未割当 */
+  buyerLoginId: string | null;
 }

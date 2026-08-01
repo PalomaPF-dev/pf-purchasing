@@ -170,6 +170,8 @@ export async function listRequests(
   opts: {
     status?: RequestStatus | "awaiting" | null;
     applicantLoginId?: string | null;
+    /** 指定時、その担当バイヤーの発注先を含む申請のみ返す */
+    buyerLoginId?: string | null;
     q?: string | null;
     limit?: number;
   } = {}
@@ -190,6 +192,11 @@ export async function listRequests(
     WHERE r.company_id = ${companyId}
       AND (${statuses}::text[] IS NULL OR r.status = ANY(${statuses}))
       AND (${opts.applicantLoginId ?? null}::text IS NULL OR r.applicant_login_id = ${opts.applicantLoginId ?? null})
+      AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
+        SELECT 1 FROM price_request_lines l2
+        JOIN suppliers sp ON sp.company_id = l2.company_id AND sp.code = l2.supplier_cd
+        WHERE l2.request_id = r.id AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}
+      ))
       AND (${q}::text IS NULL OR EXISTS (
         SELECT 1 FROM price_request_lines l
         WHERE l.request_id = r.id
@@ -532,6 +539,8 @@ export async function listPrices(
   opts: {
     q?: string | null;
     supplierCd?: string | null;
+    /** 指定時、その担当バイヤーの発注先の履歴のみ返す */
+    buyerLoginId?: string | null;
     activeOnly?: boolean;
     limit?: number;
     offset?: number;
@@ -548,6 +557,10 @@ export async function listPrices(
     AND (${q}::text IS NULL OR item_cd ILIKE ${q} OR item_name ILIKE ${q}
          OR supplier_cd ILIKE ${q} OR supplier_name ILIKE ${q})
     AND (${opts.supplierCd ?? null}::text IS NULL OR supplier_cd = ${opts.supplierCd ?? null})
+    AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
+      SELECT 1 FROM suppliers sp
+      WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+        AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}))
     AND (NOT ${activeOnly} OR (start_date <= CURRENT_DATE AND (end_date IS NULL OR end_date >= CURRENT_DATE)))`;
   const [rows, cnt] = await Promise.all([
     sql`
@@ -563,7 +576,8 @@ export async function listPrices(
 export async function priceHistoryFor(
   companyId: string,
   itemCd: string,
-  supplierCd: string | null
+  supplierCd: string | null,
+  buyerLoginId: string | null = null
 ): Promise<PriceHistoryRow[]> {
   await ensureSchema();
   const sql = getSql();
@@ -571,6 +585,10 @@ export async function priceHistoryFor(
     SELECT * FROM price_history
     WHERE company_id = ${companyId} AND item_cd = ${itemCd}
       AND (${supplierCd}::text IS NULL OR supplier_cd = ${supplierCd})
+      AND (${buyerLoginId}::text IS NULL OR EXISTS (
+        SELECT 1 FROM suppliers sp
+        WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+          AND sp.buyer_login_id = ${buyerLoginId}))
     ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'), start_date DESC
     LIMIT 1000`;
   return (rows as any[]).map(mapHistory);
@@ -726,23 +744,27 @@ export async function deleteItem(companyId: string, id: string): Promise<void> {
 
 export async function listSuppliers(
   companyId: string,
-  opts: { q?: string | null; limit?: number; offset?: number } = {}
+  opts: { q?: string | null; buyerLoginId?: string | null; limit?: number; offset?: number } = {}
 ): Promise<{ rows: Supplier[]; total: number }> {
   await ensureSchema();
   const sql = getSql();
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
+  // buyer が指定されたら担当発注先のみ（バイヤー本人の画面）
+  const buyer = opts.buyerLoginId ?? null;
   const [rows, cnt] = await Promise.all([
     sql`
       SELECT * FROM suppliers
       WHERE company_id = ${companyId}
         AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
+        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})
       ORDER BY code LIMIT ${limit} OFFSET ${offset}`,
     sql`
       SELECT COUNT(*)::int AS n FROM suppliers
       WHERE company_id = ${companyId}
-        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})`,
+        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
+        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})`,
   ]);
   return {
     rows: (rows as any[]).map((r) => ({
@@ -751,6 +773,7 @@ export async function listSuppliers(
       name: r.name,
       notes: r.notes ?? null,
       active: Boolean(r.active),
+      buyerLoginId: r.buyer_login_id ?? null,
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };
@@ -758,18 +781,52 @@ export async function listSuppliers(
 
 export async function upsertSupplier(
   companyId: string,
-  s: { code: string; name: string; notes?: string | null }
+  s: { code: string; name: string; notes?: string | null; buyerLoginId?: string | null }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const buyer = (s.buyerLoginId ?? "").trim() || null;
+  await sql`
+    INSERT INTO suppliers (company_id, code, name, notes, buyer_login_id)
+    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null}, ${buyer})
+    ON CONFLICT (company_id, code) DO UPDATE SET
+      name = EXCLUDED.name,
+      notes = COALESCE(EXCLUDED.notes, suppliers.notes),
+      buyer_login_id = COALESCE(EXCLUDED.buyer_login_id, suppliers.buyer_login_id),
+      active = true,
+      updated_at = NOW()`;
+}
+
+/** 担当バイヤーの割当・解除（管理者操作）。null で未割当に戻す。 */
+export async function setSupplierBuyer(
+  companyId: string,
+  supplierId: string,
+  buyerLoginId: string | null
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   await sql`
-    INSERT INTO suppliers (company_id, code, name, notes)
-    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null})
-    ON CONFLICT (company_id, code) DO UPDATE SET
-      name = EXCLUDED.name,
-      notes = COALESCE(EXCLUDED.notes, suppliers.notes),
-      active = true,
-      updated_at = NOW()`;
+    UPDATE suppliers SET buyer_login_id = ${buyerLoginId}, updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${supplierId}`;
+}
+
+/**
+ * 指定の発注先がそのバイヤーの担当かを判定する（サーバー側の権限チェック）。
+ * buyerLoginId が null（管理者）なら常に true。
+ */
+export async function canAccessSupplier(
+  companyId: string,
+  supplierCd: string,
+  buyerLoginId: string | null
+): Promise<boolean> {
+  if (buyerLoginId == null) return true;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT 1 FROM suppliers
+    WHERE company_id = ${companyId} AND code = ${supplierCd} AND buyer_login_id = ${buyerLoginId}
+    LIMIT 1`;
+  return (rows as any[]).length > 0;
 }
 
 export async function deleteSupplier(companyId: string, id: string): Promise<void> {
@@ -857,6 +914,7 @@ export async function searchSupplierItems(
 export async function searchActiveSuppliers(
   companyId: string,
   q: string,
+  buyerLoginId: string | null = null,
   limit = 20
 ): Promise<{ code: string; name: string; itemCount: number }[]> {
   await ensureSchema();
@@ -869,6 +927,7 @@ export async function searchActiveSuppliers(
     FROM suppliers s
     WHERE s.company_id = ${companyId} AND s.active
       AND (${pat}::text IS NULL OR s.code ILIKE ${pat} OR s.name ILIKE ${pat})
+      AND (${buyerLoginId}::text IS NULL OR s.buyer_login_id = ${buyerLoginId})
     ORDER BY s.code
     LIMIT ${Math.min(limit, 50)}`;
   return (rows as any[]).map((r) => ({
@@ -893,6 +952,7 @@ export async function searchSuppliers(companyId: string, q: string, limit = 12):
     name: r.name,
     notes: r.notes ?? null,
     active: Boolean(r.active),
+    buyerLoginId: r.buyer_login_id ?? null,
   }));
 }
 
