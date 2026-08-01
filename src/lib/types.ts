@@ -165,9 +165,28 @@ export interface Item {
   taxCd: string | null;
   notes: string | null;
   active: boolean;
+  /** 科目CD */
+  acctCd?: string | null;
+  /** 科目名 */
+  acctName?: string | null;
+  /** 科目内訳 */
+  acctDetail?: string | null;
+  /** 借方ICS科目名（製造） */
+  icsName?: string | null;
+  /** 品目区分 */
+  itemClass?: string | null;
+  /** 材料区分 */
+  materialClass?: string | null;
+  /** このアプリに登録した日 */
+  createdAt?: string | null;
+  /** 単価履歴の最新行から求めた現在の取引先 */
+  currentSupplierCd?: string | null;
+  currentSupplierName?: string | null;
+  /** その単価の適用開始日 */
+  currentStartDate?: string | null;
 }
 
-/** 取引先（発注先）マスタ */
+/** 取引先マスタ */
 export interface Supplier {
   id: string;
   code: string;
@@ -180,4 +199,8 @@ export interface Supplier {
   buyerSubLoginId?: string | null;
   /** チェイサー（管理グループ）の社員番号 */
   chaserLoginId?: string | null;
+  /** 社員マスタから引いた担当者の氏名（表示用） */
+  buyerName?: string | null;
+  buyerSubName?: string | null;
+  chaserName?: string | null;
 }

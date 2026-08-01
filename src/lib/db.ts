@@ -171,7 +171,7 @@ export async function listRequests(
   opts: {
     status?: RequestStatus | "awaiting" | null;
     applicantLoginId?: string | null;
-    /** 指定時、その担当バイヤーの発注先を含む申請のみ返す */
+    /** 指定時、その担当バイヤーの取引先を含む申請のみ返す */
     buyerLoginId?: string | null;
     q?: string | null;
     limit?: number;
@@ -298,7 +298,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
   const sql = getSql();
   const payload = lines.map(normLine).map((l, i) => {
     if (!l.itemCd) throw new Error(`明細${i + 1}: 品目CDは必須です`);
-    if (!l.supplierCd) throw new Error(`明細${i + 1}: 発注先CDは必須です`);
+    if (!l.supplierCd) throw new Error(`明細${i + 1}: 取引先CDは必須です`);
     if (!l.startDate) throw new Error(`明細${i + 1}: 適用開始日は必須です`);
     if (l.newPrice == null || !Number.isFinite(l.newPrice))
       throw new Error(`明細${i + 1}: 購入単価は数値で入力してください`);
@@ -594,7 +594,7 @@ export async function rejectRequest(
 
 /**
  * 承認済み明細を単価履歴へ反映する。
- * 同一キー（品目CD・枝番・発注先CD・納入場所CD・納品先CD）の直前の適用中レコードは
+ * 同一キー（品目CD・枝番・取引先CD・納入場所CD・納品先CD）の直前の適用中レコードは
  * 新適用開始日の前日で適用終了に更新し、新しい行を末尾（適用終了 2099/12/31）として追加する。
  */
 async function applyApprovedToHistory(companyId: string, requestId: string): Promise<void> {
@@ -728,7 +728,7 @@ export async function listPrices(
   opts: {
     q?: string | null;
     supplierCd?: string | null;
-    /** 指定時、その担当バイヤーの発注先の履歴のみ返す */
+    /** 指定時、その担当バイヤーの取引先の履歴のみ返す */
     buyerLoginId?: string | null;
     activeOnly?: boolean;
     limit?: number;
@@ -785,7 +785,7 @@ export async function priceHistoryFor(
 
 /**
  * 現行単価の自動取得（申請フォーム用）。
- * 指定日時点で適用中の単価を、キー（品目・枝番・発注先・納入場所）で検索する。
+ * 指定日時点で適用中の単価を、キー（品目・枝番・取引先・納入場所）で検索する。
  */
 export async function currentPriceFor(
   companyId: string,
@@ -881,11 +881,21 @@ export async function listItems(
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
   const [rows, cnt] = await Promise.all([
+    // 現在の取引先は単価履歴の最新行（適用開始日が最も新しい行）から引く
     sql`
-      SELECT * FROM items
-      WHERE company_id = ${companyId}
-        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
-      ORDER BY code, branch LIMIT ${limit} OFFSET ${offset}`,
+      SELECT i.*, h.supplier_cd AS current_supplier_cd, h.supplier_name AS current_supplier_name,
+             h.start_date AS current_start_date
+      FROM items i
+      LEFT JOIN LATERAL (
+        SELECT ph.supplier_cd, ph.supplier_name, ph.start_date
+        FROM price_history ph
+        WHERE ph.company_id = i.company_id AND ph.item_cd = i.code
+        ORDER BY ph.start_date DESC, ph.created_at DESC
+        LIMIT 1
+      ) h ON true
+      WHERE i.company_id = ${companyId}
+        AND (${q}::text IS NULL OR i.code ILIKE ${q} OR i.name ILIKE ${q})
+      ORDER BY i.code, i.branch LIMIT ${limit} OFFSET ${offset}`,
     sql`
       SELECT COUNT(*)::int AS n FROM items
       WHERE company_id = ${companyId}
@@ -901,29 +911,144 @@ export async function listItems(
       taxCd: r.tax_cd ?? null,
       notes: r.notes ?? null,
       active: Boolean(r.active),
+      acctCd: r.acct_cd ?? null,
+      acctName: r.acct_name ?? null,
+      acctDetail: r.acct_detail ?? null,
+      icsName: r.ics_name ?? null,
+      itemClass: r.item_class ?? null,
+      materialClass: r.material_class ?? null,
+      createdAt: r.created_at ? tsStr(r.created_at) : null,
+      currentSupplierCd: r.current_supplier_cd ?? null,
+      currentSupplierName: r.current_supplier_name ?? null,
+      currentStartDate: r.current_start_date ? dateStr(r.current_start_date) : null,
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };
 }
 
-export async function upsertItem(
-  companyId: string,
-  item: { code: string; branch?: string | null; name: string; unitCd?: string | null; taxCd?: string | null; notes?: string | null }
-): Promise<void> {
+export interface ItemInput {
+  code: string;
+  branch?: string | null;
+  name: string;
+  unitCd?: string | null;
+  taxCd?: string | null;
+  notes?: string | null;
+  acctCd?: string | null;
+  acctName?: string | null;
+  acctDetail?: string | null;
+  icsName?: string | null;
+  itemClass?: string | null;
+  materialClass?: string | null;
+}
+
+export async function upsertItem(companyId: string, item: ItemInput): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   const branch = (item.branch ?? "").trim() || "*";
   await sql`
-    INSERT INTO items (company_id, code, branch, name, unit_cd, tax_cd, notes)
+    INSERT INTO items (company_id, code, branch, name, unit_cd, tax_cd, notes,
+                       acct_cd, acct_name, acct_detail, ics_name, item_class, material_class)
     VALUES (${companyId}, ${item.code.trim()}, ${branch}, ${item.name.trim()},
-            ${item.unitCd ?? null}, ${item.taxCd ?? null}, ${item.notes ?? null})
+            ${item.unitCd ?? null}, ${item.taxCd ?? null}, ${item.notes ?? null},
+            ${item.acctCd ?? null}, ${item.acctName ?? null}, ${item.acctDetail ?? null},
+            ${item.icsName ?? null}, ${item.itemClass ?? null}, ${item.materialClass ?? null})
     ON CONFLICT (company_id, code, branch) DO UPDATE SET
       name = EXCLUDED.name,
       unit_cd = COALESCE(EXCLUDED.unit_cd, items.unit_cd),
       tax_cd = COALESCE(EXCLUDED.tax_cd, items.tax_cd),
       notes = COALESCE(EXCLUDED.notes, items.notes),
+      acct_cd = COALESCE(EXCLUDED.acct_cd, items.acct_cd),
+      acct_name = COALESCE(EXCLUDED.acct_name, items.acct_name),
+      acct_detail = COALESCE(EXCLUDED.acct_detail, items.acct_detail),
+      ics_name = COALESCE(EXCLUDED.ics_name, items.ics_name),
+      item_class = COALESCE(EXCLUDED.item_class, items.item_class),
+      material_class = COALESCE(EXCLUDED.material_class, items.material_class),
       active = true,
       updated_at = NOW()`;
+}
+
+/**
+ * 品番マスタの一括 upsert。
+ * 7万件規模の取込を現実的な時間で終わらせるため、1文で複数行をまとめて登録する。
+ * 同一バッチ内の重複キー（後勝ち）は ON CONFLICT が二重更新でエラーになるため事前に除く。
+ */
+export async function upsertItemsBatch(companyId: string, items: ItemInput[]): Promise<number> {
+  await ensureSchema();
+  const sql = getSql();
+  const CHUNK = 500;
+  const dedup = new Map<string, ItemInput>();
+  for (const it of items) {
+    const code = it.code.trim();
+    if (!code) continue;
+    const branch = (it.branch ?? "").trim() || "*";
+    dedup.set(`${code}\u0000${branch}`, it);
+  }
+  const rows = [...dedup.values()];
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    // 列ごとの配列を unnest して1文でまとめて登録する
+    const cols = {
+      code: chunk.map((r) => r.code.trim()),
+      branch: chunk.map((r) => (r.branch ?? "").trim() || "*"),
+      name: chunk.map((r) => r.name.trim()),
+      unit: chunk.map((r) => r.unitCd ?? null),
+      tax: chunk.map((r) => r.taxCd ?? null),
+      notes: chunk.map((r) => r.notes ?? null),
+      acctCd: chunk.map((r) => r.acctCd ?? null),
+      acctName: chunk.map((r) => r.acctName ?? null),
+      acctDetail: chunk.map((r) => r.acctDetail ?? null),
+      ics: chunk.map((r) => r.icsName ?? null),
+      itemClass: chunk.map((r) => r.itemClass ?? null),
+      materialClass: chunk.map((r) => r.materialClass ?? null),
+    };
+    await sql`
+      INSERT INTO items (company_id, code, branch, name, unit_cd, tax_cd, notes,
+                         acct_cd, acct_name, acct_detail, ics_name, item_class, material_class)
+      SELECT ${companyId}::uuid, * FROM unnest(
+        ${cols.code}::text[], ${cols.branch}::text[], ${cols.name}::text[],
+        ${cols.unit}::text[], ${cols.tax}::text[], ${cols.notes}::text[],
+        ${cols.acctCd}::text[], ${cols.acctName}::text[], ${cols.acctDetail}::text[],
+        ${cols.ics}::text[], ${cols.itemClass}::text[], ${cols.materialClass}::text[])
+      ON CONFLICT (company_id, code, branch) DO UPDATE SET
+        name = EXCLUDED.name,
+        unit_cd = COALESCE(EXCLUDED.unit_cd, items.unit_cd),
+        tax_cd = COALESCE(EXCLUDED.tax_cd, items.tax_cd),
+        notes = COALESCE(EXCLUDED.notes, items.notes),
+        acct_cd = COALESCE(EXCLUDED.acct_cd, items.acct_cd),
+        acct_name = COALESCE(EXCLUDED.acct_name, items.acct_name),
+        acct_detail = COALESCE(EXCLUDED.acct_detail, items.acct_detail),
+        ics_name = COALESCE(EXCLUDED.ics_name, items.ics_name),
+        item_class = COALESCE(EXCLUDED.item_class, items.item_class),
+        material_class = COALESCE(EXCLUDED.material_class, items.material_class),
+        active = true,
+        updated_at = NOW()`;
+  }
+  return rows.length;
+}
+
+/** 登録済み品番の編集（品目CD・枝番はキーのため変更しない）。 */
+export async function updateItem(
+  companyId: string,
+  id: string,
+  item: Omit<ItemInput, "code" | "branch" | "unitCd" | "taxCd"> & { active: boolean }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE items SET
+      name = ${item.name.trim()},
+      notes = ${item.notes ?? null},
+      acct_cd = ${item.acctCd ?? null},
+      acct_name = ${item.acctName ?? null},
+      acct_detail = ${item.acctDetail ?? null},
+      ics_name = ${item.icsName ?? null},
+      item_class = ${item.itemClass ?? null},
+      material_class = ${item.materialClass ?? null},
+      active = ${item.active},
+      updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${id}
+    RETURNING id`;
+  if ((rows as any[]).length === 0) throw new Error("品番が見つかりません。");
 }
 
 export async function deleteItem(companyId: string, id: string): Promise<void> {
@@ -940,15 +1065,24 @@ export async function listSuppliers(
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
-  // buyer が指定されたら担当発注先のみ（バイヤー本人の画面）
+  // buyer が指定されたら担当取引先のみ（バイヤー本人の画面）
   const buyer = opts.buyerLoginId ?? null;
   const [rows, cnt] = await Promise.all([
+    // 担当者の氏名は社員マスタ（employees）から引いて画面に表示する
     sql`
-      SELECT * FROM suppliers
-      WHERE company_id = ${companyId}
-        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
-        AND (${buyer}::text IS NULL OR ${buyer} IN (buyer_login_id, buyer_sub_login_id, chaser_login_id))
-      ORDER BY code LIMIT ${limit} OFFSET ${offset}`,
+      SELECT s.*,
+        (SELECT e.name FROM employees e
+          WHERE e.company_id = s.company_id AND e.login_id = s.buyer_login_id) AS buyer_name,
+        (SELECT e.name FROM employees e
+          WHERE e.company_id = s.company_id AND e.login_id = s.buyer_sub_login_id) AS buyer_sub_name,
+        (SELECT e.name FROM employees e
+          WHERE e.company_id = s.company_id AND e.login_id = s.chaser_login_id) AS chaser_name
+      FROM suppliers s
+      WHERE s.company_id = ${companyId}
+        AND (${q}::text IS NULL OR s.code ILIKE ${q} OR s.name ILIKE ${q})
+        AND (${buyer}::text IS NULL
+             OR ${buyer} IN (s.buyer_login_id, s.buyer_sub_login_id, s.chaser_login_id))
+      ORDER BY s.code LIMIT ${limit} OFFSET ${offset}`,
     sql`
       SELECT COUNT(*)::int AS n FROM suppliers
       WHERE company_id = ${companyId}
@@ -965,6 +1099,9 @@ export async function listSuppliers(
       buyerLoginId: r.buyer_login_id ?? null,
       buyerSubLoginId: r.buyer_sub_login_id ?? null,
       chaserLoginId: r.chaser_login_id ?? null,
+      buyerName: r.buyer_name ?? null,
+      buyerSubName: r.buyer_sub_name ?? null,
+      chaserName: r.chaser_name ?? null,
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };
@@ -1069,7 +1206,7 @@ export async function setSupplierContactIds(
 }
 
 /**
- * 指定の発注先がそのバイヤーの担当かを判定する（サーバー側の権限チェック）。
+ * 指定の取引先がそのバイヤーの担当かを判定する（サーバー側の権限チェック）。
  * buyerLoginId が null（管理者）なら常に true。
  */
 export async function canAccessSupplier(
@@ -1114,7 +1251,7 @@ export async function searchItems(companyId: string, q: string, limit = 12): Pro
   }));
 }
 
-/** 発注先で取引実績のある品目（単価履歴ベース）。単価申請は発注先ごとに行うため、その候補を返す。 */
+/** 取引先で取引実績のある品目（単価履歴ベース）。単価申請は取引先ごとに行うため、その候補を返す。 */
 export interface SupplierItem {
   code: string;
   branch: string | null;
@@ -1130,9 +1267,9 @@ export interface SupplierItem {
 }
 
 /**
- * 発注先の取引品目を検索する（品目CD・品名の部分一致）。
+ * 取引先の取引品目を検索する（品目CD・品名の部分一致）。
  * 単価履歴から品目×納入場所ごとの最新行を取り、品名はマスタを優先して補完する。
- * q が空なら取引量の多い順ではなく品目CD順に先頭を返す（発注先選択直後の初期候補）。
+ * q が空なら取引量の多い順ではなく品目CD順に先頭を返す（取引先選択直後の初期候補）。
  */
 export async function searchSupplierItems(
   companyId: string,
@@ -1169,7 +1306,7 @@ export async function searchSupplierItems(
   }));
 }
 
-/** 取引実績のある発注先の検索（単価履歴＋取引先マスタ）。申請の起点となる発注先選択に使う。 */
+/** 取引実績のある取引先の検索（単価履歴＋取引先マスタ）。申請の起点となる取引先選択に使う。 */
 export async function searchActiveSuppliers(
   companyId: string,
   q: string,
@@ -1364,7 +1501,7 @@ export interface ExportableLine extends PriceRequestLine {
 
 /**
  * 出力対象の承認済み明細（未出力 or すべて）。
- * 同一キー（品目・枝番・発注先・納入場所・納品先）の直前の単価履歴を併せて取得し、
+ * 同一キー（品目・枝番・取引先・納入場所・納品先）の直前の単価履歴を併せて取得し、
  * MC取込CSVでは単価・適用日以外の項目を既存値のまま維持できるようにする。
  */
 export async function listExportableLines(
@@ -1518,6 +1655,36 @@ export async function upsertEmployee(
       updated_at = NOW()`;
 }
 
+/**
+ * 登録済み社員の編集。社員番号（login_id）はユーザー・承認者の紐付けキーのため変更しない。
+ * email は空文字で明示的にクリアできる（upsertEmployee とは異なり COALESCE しない）。
+ */
+export async function updateEmployee(
+  companyId: string,
+  id: string,
+  e: {
+    name: string;
+    wfRole: "mgr" | "dept" | null;
+    role: "admin" | "member";
+    email: string | null;
+    active: boolean;
+  }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE employees SET
+      name = ${normalizeName(e.name)},
+      wf_role = ${e.wfRole},
+      role = ${e.role},
+      email = ${e.email},
+      active = ${e.active},
+      updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${id}
+    RETURNING id`;
+  if ((rows as any[]).length === 0) throw new Error("社員が見つかりません。");
+}
+
 export async function deleteEmployee(companyId: string, id: string): Promise<void> {
   const sql = getSql();
   await sql`DELETE FROM employees WHERE company_id = ${companyId} AND id = ${id}`;
@@ -1653,7 +1820,70 @@ export async function filesForHistoryRows(
   return out;
 }
 
-/** 申請に含まれる発注先CDの一覧（添付の閲覧権限チェック用） */
+export interface HistoryReasonInput {
+  itemCd: string;
+  supplierCd: string;
+  locCd: string | null;
+  startDate: string;
+  reason: string | null;
+  bdMaterial: number | null;
+  bdRevision: number | null;
+  bdDesign: number | null;
+  bdForex: number | null;
+  bdOther: number | null;
+  applicantName: string | null;
+}
+
+/**
+ * 単価改訂履歴の理由・内訳を既存の単価履歴に反映する（初期データ移行の補完）。
+ * mcframe の単価情報には改訂理由が含まれないため、改訂履歴のエクスポートで後から埋める。
+ * 品目CD・取引先CD・納入場所CD・適用開始日で既存行を特定して更新する（新規行は作らない）。
+ */
+export async function applyHistoryReasons(
+  companyId: string,
+  rows: HistoryReasonInput[]
+): Promise<{ updated: number; unmatched: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const CHUNK = 500;
+  let updated = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const c = rows.slice(i, i + CHUNK);
+    const res = (await sql`
+      UPDATE price_history h SET
+        reason = COALESCE(NULLIF(s.reason, ''), h.reason),
+        bd_material = COALESCE(s.bd_material, h.bd_material),
+        bd_revision = COALESCE(s.bd_revision, h.bd_revision),
+        bd_design = COALESCE(s.bd_design, h.bd_design),
+        bd_forex = COALESCE(s.bd_forex, h.bd_forex),
+        bd_other = COALESCE(s.bd_other, h.bd_other),
+        applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name)
+      FROM unnest(
+        ${c.map((r) => r.itemCd)}::text[],
+        ${c.map((r) => r.supplierCd)}::text[],
+        ${c.map((r) => r.locCd ?? "")}::text[],
+        ${c.map((r) => r.startDate)}::date[],
+        ${c.map((r) => r.reason ?? "")}::text[],
+        ${c.map((r) => r.bdMaterial)}::numeric[],
+        ${c.map((r) => r.bdRevision)}::numeric[],
+        ${c.map((r) => r.bdDesign)}::numeric[],
+        ${c.map((r) => r.bdForex)}::numeric[],
+        ${c.map((r) => r.bdOther)}::numeric[],
+        ${c.map((r) => r.applicantName ?? "")}::text[]
+      ) AS s(item_cd, supplier_cd, loc_cd, start_date, reason,
+             bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)
+      WHERE h.company_id = ${companyId}
+        AND h.item_cd = s.item_cd
+        AND h.supplier_cd = s.supplier_cd
+        AND COALESCE(h.loc_cd, '*') = COALESCE(NULLIF(s.loc_cd, ''), '*')
+        AND h.start_date = s.start_date
+      RETURNING h.id`) as any[];
+    updated += res.length;
+  }
+  return { updated, unmatched: Math.max(0, rows.length - updated) };
+}
+
+/** 申請に含まれる取引先CDの一覧（添付の閲覧権限チェック用） */
 export async function requestSupplierCodes(
   companyId: string,
   requestId: string

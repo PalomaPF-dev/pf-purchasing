@@ -292,10 +292,10 @@ export default function QuoteImport({
                   <span className="font-medium text-slate-700">{d.fileName}</span>
                   <span className="ml-auto text-slate-500">品目 {d.items.length} 件</span>
                 </div>
-                {/* 発注先・適用開始日（見積書共通の項目） */}
+                {/* 取引先・適用開始日（見積書共通の項目） */}
                 <div className="grid grid-cols-2 gap-2 border-b border-slate-100 px-3 py-2 sm:grid-cols-4">
                   <div>
-                    <label className="mb-0.5 block text-[10px] text-slate-500">発注先CD</label>
+                    <label className="mb-0.5 block text-[10px] text-slate-500">取引先CD</label>
                     <input
                       className={`${inputCls} font-mono`}
                       value={d.supplierCd ?? ""}
@@ -304,7 +304,7 @@ export default function QuoteImport({
                     />
                   </div>
                   <div className="col-span-2">
-                    <label className="mb-0.5 block text-[10px] text-slate-500">発注先名</label>
+                    <label className="mb-0.5 block text-[10px] text-slate-500">取引先名</label>
                     <input
                       className={inputCls}
                       value={d.supplierName ?? ""}

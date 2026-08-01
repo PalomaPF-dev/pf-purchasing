@@ -16,8 +16,8 @@ export interface PickedItem {
 }
 
 /**
- * 品目の選択（発注先を選んだ後）。
- * 選択した発注先の単価履歴から候補を出し、品名・単位・ロット・現行単価をまとめて返す。
+ * 品目の選択（取引先を選んだ後）。
+ * 選択した取引先の単価履歴から候補を出し、品名・単位・ロット・現行単価をまとめて返す。
  * 履歴にない新規品目は入力値をそのまま採用できる。
  */
 export default function ItemPicker({
@@ -90,7 +90,7 @@ export default function ItemPicker({
           )}
           {!loading && items.length === 0 && (
             <div className="px-3 py-3 text-xs text-[#707070]">
-              この発注先の取引履歴に該当がありません。新規品目の場合はそのまま品目CDを入力してください。
+              この取引先の取引履歴に該当がありません。新規品目の場合はそのまま品目CDを入力してください。
             </div>
           )}
           {items.map((it, i) => (

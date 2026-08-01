@@ -15,9 +15,9 @@ interface Candidate {
 }
 
 /**
- * 発注先の選択（単価申請の起点）。
- * 単価申請は発注先ごとに行うため、まずここで発注先を確定させ、
- * 以降の明細ではその発注先の取引品目だけを選べるようにする。
+ * 取引先の選択（単価申請の起点）。
+ * 単価申請は取引先ごとに行うため、まずここで取引先を確定させ、
+ * 以降の明細ではその取引先の取引品目だけを選べるようにする。
  */
 export default function SupplierPicker({
   value,
@@ -66,7 +66,7 @@ export default function SupplierPicker({
       <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e11d48]/30 bg-[#fff1f2] p-4">
         <Building2 className="h-5 w-5 shrink-0 text-[#e11d48]" />
         <div>
-          <div className="text-[11px] font-medium text-[#9f1239]">発注先（この申請の対象）</div>
+          <div className="text-[11px] font-medium text-[#9f1239]">取引先（この申請の対象）</div>
           <div className="text-sm font-bold text-[#333333]">
             <span className="font-mono">{value.code}</span>
             <span className="ml-2">{value.name || "（名称未設定）"}</span>
@@ -82,7 +82,7 @@ export default function SupplierPicker({
           className="ml-auto inline-flex items-center gap-1 rounded-lg border border-[#e5e5e5] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] hover:bg-[#f7f7f5]"
         >
           <X className="h-3.5 w-3.5" />
-          発注先を変更
+          取引先を変更
         </button>
       </div>
     );
@@ -94,10 +94,10 @@ export default function SupplierPicker({
         <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#e11d48] text-xs font-bold text-white">
           1
         </span>
-        <h2 className="text-sm font-bold text-[#333333]">発注先を選択してください</h2>
+        <h2 className="text-sm font-bold text-[#333333]">取引先を選択してください</h2>
       </div>
       <p className="mb-3 text-xs text-[#707070]">
-        単価申請は発注先ごとに作成します。発注先を選ぶと、その取引先の品目から選べるようになります。
+        単価申請は取引先ごとに作成します。取引先を選ぶと、その取引先の品目から選べるようになります。
       </p>
       <div className="relative max-w-lg">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#a0a0a0]" />
@@ -105,7 +105,7 @@ export default function SupplierPicker({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onFocus={() => setOpen(true)}
-          placeholder="発注先CD・発注先名で検索（例: 00906 / 北陸電気）"
+          placeholder="取引先CD・取引先名で検索（例: 00906 / 北陸電気）"
           className="w-full rounded-lg border border-[#d5d5d5] bg-white py-2 pl-9 pr-3 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
         />
       </div>
@@ -120,7 +120,7 @@ export default function SupplierPicker({
           )}
           {!loading && candidates.length === 0 && (
             <div className="px-3 py-3 text-xs text-[#707070]">
-              該当する発注先がありません。取引先マスタに登録されているかご確認ください。
+              該当する取引先がありません。取引先マスタに登録されているかご確認ください。
             </div>
           )}
           {candidates.map((c) => (

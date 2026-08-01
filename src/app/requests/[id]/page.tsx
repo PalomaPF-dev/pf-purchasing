@@ -171,7 +171,7 @@ export default async function RequestDetailPage({
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
               <th className="px-3 py-2.5 font-medium">#</th>
               <th className="px-2 py-2.5 font-medium">品目CD / 品名</th>
-              <th className="px-2 py-2.5 font-medium">発注先</th>
+              <th className="px-2 py-2.5 font-medium">取引先</th>
               <th className="px-2 py-2.5 font-medium">納入場所</th>
               <th className="border-l border-[#eeeeee] bg-rose-50/40 px-2 py-2.5 font-medium">適用日</th>
               <th className="bg-rose-50/40 px-2 py-2.5 text-right font-medium">単価</th>

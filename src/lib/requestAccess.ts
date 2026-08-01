@@ -3,7 +3,7 @@ import { supplierScopeOf, type AppSession } from "./session";
 
 /**
  * 申請（とその添付資料）を扱えるかを判定する。
- * 管理者は全件。一般（バイヤー）は、その申請に自分の担当発注先が含まれている場合のみ。
+ * 管理者は全件。一般（バイヤー）は、その申請に自分の担当取引先が含まれている場合のみ。
  * 明細がまだ無い下書きは、作成者本人だけが扱える。
  */
 export async function canAccessRequest(

@@ -108,7 +108,7 @@ export default async function PriceHistoryPage({
             return (
               <section key={key} className="rounded-xl border border-[#e5e5e5] bg-white">
                 <div className="border-b border-[#eeeeee] px-4 py-3 text-sm font-bold text-[#333333]">
-                  発注先 <span className="font-mono">{supplierCd}</span> {supplierName}
+                  取引先 <span className="font-mono">{supplierCd}</span> {supplierName}
                   {locCd !== "*" && (
                     <span className="ml-3 text-xs font-normal text-[#707070]">納入場所: {locCd}</span>
                   )}

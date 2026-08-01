@@ -209,7 +209,7 @@ export default function RequestForm({
   const [tab, setTab] = useState<Tab>("manual");
   // 単価差の内訳を展開している明細行
   const [openRows, setOpenRows] = useState<Set<number>>(new Set());
-  // 発注先（申請の対象）。編集時は既存明細から復元する
+  // 取引先（申請の対象）。編集時は既存明細から復元する
   const [supplier, setSupplier] = useState<PickedSupplier | null>(() => {
     const first = initialLines?.[0];
     return first?.supplierCd
@@ -243,11 +243,11 @@ export default function RequestForm({
     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((_, j) => j !== i)));
   }
 
-  /** 現行単価（旧単価）を単価履歴から自動取得。発注先は申請の発注先を使う。 */
+  /** 現行単価（旧単価）を単価履歴から自動取得。取引先は申請の取引先を使う。 */
   async function fetchCurrent(i: number) {
     const l = lines[i];
     if (!supplier) {
-      setError("先に発注先を選択してください。");
+      setError("先に取引先を選択してください。");
       return;
     }
     if (!l.itemCd) {
@@ -299,8 +299,8 @@ export default function RequestForm({
 
   async function save(submit: boolean) {
     setError("");
-    if (!supplier) return setError("発注先を選択してください。");
-    // 明細の発注先は申請の発注先で統一する（単価申請は発注先ごとに作成する）
+    if (!supplier) return setError("取引先を選択してください。");
+    // 明細の取引先は申請の取引先で統一する（単価申請は取引先ごとに作成する）
     const payloadLines: FormLine[] = lines.map((l) => ({
       ...l,
       supplierCd: supplier.code,
@@ -415,7 +415,7 @@ export default function RequestForm({
 
   return (
     <div className="space-y-4">
-      {/* ① 発注先の選択（単価申請は発注先ごと） */}
+      {/* ① 取引先の選択（単価申請は取引先ごと） */}
       <SupplierPicker
         value={supplier}
         onChange={(s) => {
@@ -441,7 +441,7 @@ export default function RequestForm({
 
       {!supplier ? (
         <div className="rounded-xl border border-dashed border-[#d5d5d5] bg-white p-8 text-center text-sm text-[#707070]">
-          先に発注先を選択してください。選択すると、その発注先の取引品目から明細を入力できます。
+          先に取引先を選択してください。選択すると、その取引先の取引品目から明細を入力できます。
         </div>
       ) : (
         <>
