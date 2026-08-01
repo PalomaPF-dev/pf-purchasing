@@ -94,9 +94,8 @@ export default function WfSettingsForm({
       <section className="rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-1 text-sm font-bold text-[#333333]">承認者</h2>
         <p className="mb-3 text-xs text-[#707070]">
-          承認者は「設定 → ユーザー登録」の各社員の<span className="font-medium">「承認W/F」</span>で指定します。
-          変更したら「社員マスタからユーザーを登録 / 更新」を押すと、この一覧に反映されます。
-          どちらも未指定の場合は、すべての管理者が承認できます。
+          承認者は「設定 → ユーザー登録」の各社員の<span className="font-medium">「承認W/F」</span>でユーザーごとに指定します。
+          そこで保存した時点でこの一覧に反映されます。どちらも未指定の場合は、すべての管理者が承認できます。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <ApproverList title={`${mgrLabel || "MGR"}承認`} list={mgrApprovers} />

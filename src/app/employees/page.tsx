@@ -21,6 +21,9 @@ export default async function EmployeesPage({
   const q = sp.q ?? "";
   const rows = await listEmployees(session.companyId, { q: q || null });
   const pending = rows.filter((e) => e.active && !e.userExists).length;
+  // 承認W/Fの現在の指定（この画面での設定がそのまま承認者になる）
+  const mgrs = rows.filter((e) => e.active && e.wfRole === "mgr");
+  const depts = rows.filter((e) => e.active && e.wfRole === "dept");
 
   return (
     <div className="mx-auto max-w-4xl p-4 sm:p-6">
@@ -29,10 +32,47 @@ export default async function EmployeesPage({
         description={`社員番号・氏名・承認W/F・権限を管理し、ログインユーザーをまとめて登録します（全 ${rows.length.toLocaleString()} 名）。取引先の担当窓口の名寄せにも使います。`}
       />
 
+      {/* 承認W/F（この画面の「承認W/F」欄がそのまま承認者になる） */}
+      <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
+        <h2 className="mb-1 text-sm font-bold text-[#333333]">承認ワークフロー（ユーザーごとに指定）</h2>
+        <p className="mb-3 text-sm text-[#707070]">
+          一覧の「承認W/F」欄で MGR / 部門長 を選ぶと、その社員が単価申請の承認者になります（保存した時点で反映されます）。
+          単価申請は <span className="font-medium">MGR承認 → 部門長承認</span> の2段階です。
+          どちらも未指定の場合は、すべての管理者が承認できます。
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {(
+            [
+              ["MGR承認", mgrs],
+              ["部門長承認", depts],
+            ] as const
+          ).map(([label, list]) => (
+            <div key={label} className="rounded-lg border border-[#e5e5e5] p-3">
+              <div className="mb-1.5 text-sm font-medium text-[#333333]">
+                {label}
+                <span className="ml-1 text-xs font-normal text-[#909090]">{list.length} 名</span>
+              </div>
+              {list.length === 0 ? (
+                <div className="text-xs text-[#a0a0a0]">未指定（すべての管理者が承認できます）</div>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {list.map((e) => (
+                    <li key={e.id}>
+                      {e.name || "（氏名未登録）"}
+                      <span className="ml-1 font-mono text-xs text-[#909090]">（{e.loginId}）</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
         <h2 className="mb-1 text-sm font-bold text-[#333333]">社員マスタからユーザーを登録</h2>
         <p className="mb-3 text-sm text-[#707070]">
-          社員マスタの内容でログインユーザーを作成・更新し、承認W/Fの承認者（MGR・部門長）も合わせて設定します。
+          社員マスタの内容でログインユーザーをまとめて作成・更新します（承認者の設定は上の指定がそのまま使われます）。
           既存ユーザーは氏名と権限のみ更新され、パスワードは変わりません。
           {pending > 0 && (
             <span className="ml-1 font-medium text-[#e11d48]">未登録の社員が {pending} 名います。</span>
