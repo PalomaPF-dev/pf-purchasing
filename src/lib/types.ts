@@ -23,6 +23,8 @@ export const APPROVAL_STAGE_LABEL: Record<ApprovalStage, string> = {
 export interface PriceRequest {
   id: string;
   reqNo: number | null;
+  /** 表示用の申請番号（採番ルールを適用した文字列）。未提出は null */
+  reqCode: string | null;
   title: string | null;
   status: RequestStatus;
   applicantLoginId: string | null;

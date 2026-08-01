@@ -52,7 +52,14 @@ export default async function RequestPrintPage({
 
   return (
     <div className="min-h-screen bg-white">
-      <style>{`@page { size: A4 landscape; margin: 10mm; }`}</style>
+      <style>{`
+        @page { size: A4 landscape; margin: 10mm; }
+        .print-sheet { width: 277mm; }
+        @media screen { .print-sheet { transform-origin: top center; } }
+        /* 帳票は列幅を固定して桁あふれによるズレを防ぐ */
+        .print-table { table-layout: fixed; }
+        .print-table td, .print-table th { overflow-wrap: anywhere; }
+      `}</style>
 
       <div className="no-print mx-auto flex max-w-5xl items-center justify-between p-4">
         <Link
@@ -65,7 +72,8 @@ export default async function RequestPrintPage({
         <PrintButton />
       </div>
 
-      <div className="mx-auto max-w-6xl px-6 pb-8 text-slate-900">
+      {/* A4横（277mm ＝ 297mm − 余白10mm×2）に合わせた固定幅。画面でも同じ割付で見える */}
+      <div className="print-sheet mx-auto pb-8 text-slate-900">
         {/* 上段: 取引先 / タイトル / 承認欄 */}
         <div className="mb-4 flex items-start justify-between gap-4">
           {/* 取引先 */}
@@ -84,14 +92,16 @@ export default async function RequestPrintPage({
             </tbody>
           </table>
 
-          <div className="pt-3 text-center">
-            <h1 className="text-2xl font-bold tracking-[0.4em]">登録品単価連絡書</h1>
+          <div className="shrink-0 pt-3 text-center">
+            <h1 className="whitespace-nowrap text-2xl font-bold tracking-[0.3em]">
+              登録品単価連絡書
+            </h1>
           </div>
 
           {/* 承認欄（発行日・部門長・MGR・担当） */}
           <div className="text-right">
             <div className="mb-1 text-xs text-slate-600">
-              {request.reqNo != null ? `申請No: ${request.reqNo}` : "（下書き）"}
+              {request.reqCode ? `申請No: ${request.reqCode}` : "（下書き）"}
             </div>
             <table className="ml-auto border-collapse">
               <tbody>
@@ -126,15 +136,14 @@ export default async function RequestPrintPage({
         <table className="print-table w-full border-collapse">
           <thead>
             <tr>
-              <th className={`${th} w-[6%]`} rowSpan={2}>維持日</th>
-              <th className={`${th} w-[8%]`} rowSpan={2}>品番</th>
-              <th className={`${th} w-[5%]`} rowSpan={2}>納入場所</th>
-              <th className={`${th} w-[12%]`} rowSpan={2}>品名</th>
-              <th className={`${thNew} w-[19%]`} colSpan={4}>新 単 価</th>
-              <th className={`${thOld} w-[11%]`} colSpan={3}>旧 単 価</th>
-              <th className={`${thBd} w-[24%]`} colSpan={6}>単 価 差 の 内 訳</th>
-              <th className={`${thQty} w-[10%]`} colSpan={2}>月 当 た り</th>
-              <th className={`${th} w-[13%]`} rowSpan={2}>備考（改訂理由）</th>
+              <th className={`${th} w-[9%]`} rowSpan={2}>品番</th>
+              <th className={`${th} w-[4%]`} rowSpan={2}>納入場所</th>
+              <th className={`${th} w-[13%]`} rowSpan={2}>品名</th>
+              <th className={`${thNew} w-[20%]`} colSpan={4}>新 単 価</th>
+              <th className={`${thOld} w-[12%]`} colSpan={3}>旧 単 価</th>
+              <th className={`${thBd} w-[18%]`} colSpan={6}>単 価 差 の 内 訳</th>
+              <th className={`${thQty} w-[8%]`} colSpan={2}>月 当 た り</th>
+              <th className={`${th} w-[16%]`} rowSpan={2}>備考（改訂理由）</th>
             </tr>
             <tr>
               <th className={thNew}>適用日</th>
@@ -159,9 +168,6 @@ export default async function RequestPrintPage({
               const isNew = l.currentPrice == null; // 旧単価なし = 新規登録品
               return (
                 <tr key={l.id}>
-                  <td className={`${td} text-center text-[11px]`}>
-                    {formatDate(request.submittedAt ?? request.createdAt)}
-                  </td>
                   <td className={`${td} font-mono`}>
                     {l.itemCd}
                     {l.itemBranch ? `-${l.itemBranch}` : ""}

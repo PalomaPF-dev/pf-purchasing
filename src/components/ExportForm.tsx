@@ -7,6 +7,7 @@ import type { PriceRequestLine } from "@/lib/types";
 
 export interface ExportRow extends PriceRequestLine {
   reqNo: number | null;
+  reqCode: string | null;
   approvedAt: string | null;
   /** 既存レコード（mcframe 現行値）の有無。無い＝新規登録として出力される */
   base: unknown | null;
@@ -142,7 +143,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
                     className="h-4 w-4 accent-[#e11d48]"
                   />
                 </td>
-                <td className="px-2 py-2 font-mono">#{r.reqNo}</td>
+                <td className="px-2 py-2 font-mono">{r.reqCode ?? `#${r.reqNo}`}</td>
                 <td className="px-2 py-2">
                   <span className="font-mono">{r.itemCd}{r.itemBranch ? `-${r.itemBranch}` : ""}</span>
                   <div className="text-xs text-[#707070]">{r.itemName ?? ""}</div>

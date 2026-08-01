@@ -127,7 +127,7 @@ export default async function DashboardPage({
                     <Link href={`/requests/${r.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-[#f7f7f5]">
                       <div className="min-w-0">
                         <div className="truncate text-sm font-medium text-[#333333]">
-                          {r.reqNo != null ? `申請 #${r.reqNo}` : "申請"}
+                          {r.reqCode ? `申請 ${r.reqCode}` : "申請"}
                           {r.title ? ` ${r.title}` : ""}
                           <span className="ml-2 text-xs text-[#707070]">
                             {r.supplierSummary ?? ""}（{r.lineCount ?? 0}件）
@@ -168,7 +168,7 @@ export default async function DashboardPage({
                   <Link href={`/requests/${r.id}`} className="flex items-center justify-between px-4 py-3 hover:bg-[#f7f7f5]">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-medium text-[#333333]">
-                        {r.reqNo != null ? `申請 #${r.reqNo}` : "下書き"}
+                        {r.reqCode ?? "下書き"}
                         {r.title ? ` ${r.title}` : ""}
                         <span className="ml-2 text-xs text-[#707070]">（{r.lineCount ?? 0}件）</span>
                       </div>

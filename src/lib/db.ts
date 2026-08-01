@@ -39,6 +39,7 @@ function mapRequest(r: any): PriceRequest {
   return {
     id: r.id,
     reqNo: r.req_no ?? null,
+    reqCode: r.req_code ?? (r.req_no != null ? `#${r.req_no}` : null),
     title: r.title ?? null,
     status: r.status as RequestStatus,
     applicantLoginId: r.applicant_login_id ?? null,
@@ -398,6 +399,39 @@ export async function submitRequest(
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
+  const cur = (await sql`
+    SELECT status, req_no FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[];
+  if (cur.length === 0) throw new Error("申請が見つかりません");
+  if (cur[0].status !== "draft" && cur[0].status !== "rejected")
+    throw new Error("提出できませんでした（状態を確認してください）");
+
+  // 採番は初回提出時のみ。取り下げ→再提出では番号を維持する
+  let reqNo: number | null = cur[0].req_no ?? null;
+  let reqSeq: number | null = null;
+  let reqCode: string | null = null;
+  if (reqNo == null) {
+    const wf = await getWfSettings(companyId);
+    const now = new Date();
+    // 連番のリセット単位に応じて、その期間内の最大値の次を採番する
+    const since =
+      wf.reqReset === "month"
+        ? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`
+        : wf.reqReset === "year"
+          ? `${now.getFullYear()}-01-01`
+          : null;
+    const seqRow = (await sql`
+      SELECT COALESCE(MAX(req_seq), 0) + 1 AS n FROM price_requests
+      WHERE company_id = ${companyId}
+        AND (${since}::date IS NULL OR submitted_at >= ${since}::date)`) as any[];
+    reqSeq = Number(seqRow[0]?.n ?? 1);
+    reqCode = formatReqCode(wf.reqFormat, reqSeq, now);
+    const noRow = (await sql`
+      SELECT COALESCE(MAX(req_no), 0) + 1 AS n FROM price_requests
+      WHERE company_id = ${companyId}`) as any[];
+    reqNo = Number(noRow[0]?.n ?? 1);
+  }
+
   const rows = await sql`
     UPDATE price_requests SET
       status = 'pending',
@@ -405,8 +439,9 @@ export async function submitRequest(
       updated_at = NOW(),
       applicant_login_id = COALESCE(applicant_login_id, ${actor.loginId}),
       applicant_name = COALESCE(applicant_name, ${actor.name}),
-      req_no = COALESCE(req_no,
-        (SELECT COALESCE(MAX(req_no), 0) + 1 FROM price_requests WHERE company_id = ${companyId}))
+      req_no = COALESCE(req_no, ${reqNo}),
+      req_seq = COALESCE(req_seq, ${reqSeq}),
+      req_code = COALESCE(req_code, ${reqCode})
     WHERE company_id = ${companyId} AND id = ${requestId} AND status IN ('draft', 'rejected')
     RETURNING id`;
   if ((rows as any[]).length === 0) throw new Error("提出できませんでした（状態を確認してください）");
@@ -692,6 +727,26 @@ export interface WfSettings {
   /** 帳票・画面に表示する承認段階の名称 */
   mgrLabel: string;
   deptLabel: string;
+  /** 申請番号の書式。{YYYY} {YY} {MM} {SEQ}（{SEQ4} で桁数指定）が使える */
+  reqFormat: string;
+  /** 連番のリセット単位 */
+  reqReset: "none" | "year" | "month";
+}
+
+/**
+ * 申請番号の採番ルールを適用して表示用の番号を作る。
+ * 例: 書式 "PU-{YYYY}{MM}-{SEQ4}" / 2026年8月 / 連番12 → "PU-202608-0012"
+ */
+export function formatReqCode(format: string, seq: number, at: Date): string {
+  const y = at.getFullYear();
+  const m = String(at.getMonth() + 1).padStart(2, "0");
+  return (format || "{YYYY}-{SEQ4}")
+    .replace(/\{YYYY\}/g, String(y))
+    .replace(/\{YY\}/g, String(y).slice(-2))
+    .replace(/\{MM\}/g, m)
+    .replace(/\{SEQ(\d*)\}/g, (_, d: string) =>
+      d ? String(seq).padStart(Number(d), "0") : String(seq)
+    );
 }
 
 const WF_DEFAULT: WfSettings = {
@@ -700,6 +755,8 @@ const WF_DEFAULT: WfSettings = {
   deptApprovers: [],
   mgrLabel: "MGR",
   deptLabel: "部門長",
+  reqFormat: "{YYYY}-{SEQ4}",
+  reqReset: "year",
 };
 
 /** 承認ワークフロー設定を取得（未設定なら既定値）。 */
@@ -716,6 +773,8 @@ export async function getWfSettings(companyId: string): Promise<WfSettings> {
     deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
     mgrLabel: r.mgr_label || "MGR",
     deptLabel: r.dept_label || "部門長",
+    reqFormat: r.req_format || WF_DEFAULT.reqFormat,
+    reqReset: r.req_reset === "none" || r.req_reset === "month" ? r.req_reset : "year",
   };
 }
 
@@ -725,15 +784,19 @@ export async function saveWfSettings(companyId: string, w: WfSettings): Promise<
   const sql = getSql();
   const clean = (a: string[]) => [...new Set(a.map((x) => x.trim()).filter(Boolean))];
   await sql`
-    INSERT INTO wf_settings (company_id, stages, mgr_approvers, dept_approvers, mgr_label, dept_label)
+    INSERT INTO wf_settings (company_id, stages, mgr_approvers, dept_approvers,
+                             mgr_label, dept_label, req_format, req_reset)
     VALUES (${companyId}, ${w.stages}, ${clean(w.mgrApprovers)}, ${clean(w.deptApprovers)},
-            ${w.mgrLabel.trim() || "MGR"}, ${w.deptLabel.trim() || "部門長"})
+            ${w.mgrLabel.trim() || "MGR"}, ${w.deptLabel.trim() || "部門長"},
+            ${w.reqFormat.trim() || WF_DEFAULT.reqFormat}, ${w.reqReset})
     ON CONFLICT (company_id) DO UPDATE SET
       stages = EXCLUDED.stages,
       mgr_approvers = EXCLUDED.mgr_approvers,
       dept_approvers = EXCLUDED.dept_approvers,
       mgr_label = EXCLUDED.mgr_label,
       dept_label = EXCLUDED.dept_label,
+      req_format = EXCLUDED.req_format,
+      req_reset = EXCLUDED.req_reset,
       updated_at = NOW()`;
 }
 
@@ -1573,6 +1636,7 @@ export interface McBaseValues {
 
 export interface ExportableLine extends PriceRequestLine {
   reqNo: number | null;
+  reqCode: string | null;
   approvedAt: string | null;
   /** 同一キーの直前の単価履歴（無ければ null＝新規登録品） */
   base: McBaseValues | null;
@@ -1593,7 +1657,7 @@ export async function listExportableLines(
   const requestId = opts.requestId ?? null;
   const limit = Math.min(opts.limit ?? 1000, 5000);
   const rows = await sql`
-    SELECT l.*, r.req_no,
+    SELECT l.*, r.req_no, r.req_code,
       (SELECT MAX(a.created_at) FROM request_approvals a
        WHERE a.request_id = r.id AND a.stage = 'dept' AND a.action = 'approve') AS approved_at,
       b.item_branch AS b_item_branch, b.item_name AS b_item_name, b.supplier_name AS b_supplier_name,
@@ -1623,6 +1687,7 @@ export async function listExportableLines(
   return (rows as any[]).map((r) => ({
     ...mapLine(r),
     reqNo: r.req_no ?? null,
+    reqCode: r.req_code ?? (r.req_no != null ? `#${r.req_no}` : null),
     approvedAt: r.approved_at ? tsStr(r.approved_at) : null,
     base: r.has_base
       ? {

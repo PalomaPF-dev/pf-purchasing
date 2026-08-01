@@ -275,6 +275,23 @@ export async function rejectManyAction(
   return { ok, failed };
 }
 
+/** 申請番号の採番ルールの保存（管理者のみ）。 */
+export async function saveReqNoSettingsAction(
+  format: string,
+  reset: "none" | "year" | "month"
+): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    const wf = await getWfSettings(s.companyId);
+    await saveWfSettings(s.companyId, {
+      ...wf,
+      reqFormat: format.trim() || "{YYYY}-{SEQ4}",
+      reqReset: reset === "none" || reset === "month" ? reset : "year",
+    });
+    revalidatePath("/requests");
+  });
+}
+
 /** 承認段階の名称の保存（管理者のみ）。承認者はユーザー登録側で管理する。 */
 export async function saveWfLabelsAction(mgrLabel: string, deptLabel: string): Promise<void> {
   const s = await requireAdminSession();
