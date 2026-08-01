@@ -13,6 +13,7 @@ import {
 } from "@/lib/db";
 import { parseCsv } from "@/lib/csv";
 import type { ItemInput as ItemRowInput } from "@/lib/db";
+import { ITEM_IMPORT_HEADERS, mergeItemRows } from "@/lib/itemImport";
 import type { LineInput } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -32,10 +33,7 @@ const PRICE_HEADERS = [
   "現行単価", "購入単価", "有償支給価格", "月当たり数量",
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
-const ITEM_HEADERS = [
-  "品目CD", "品名", "単位ＣＤ", "科目", "科目名", "科目内訳",
-  "借方ICS科目名（製造）", "品目区分", "材料区分", "枝番", "仕入税CD", "備考",
-];
+const ITEM_HEADERS = ITEM_IMPORT_HEADERS;
 const SUPPLIER_HEADERS = ["取引先CD", "取引先名", "担当バイヤー社員番号", "備考"];
 const CONTACT_HEADERS = ["取引先CD", "取引先名", "企画グループ", "管理グループ"];
 const REASON_HEADERS = [
@@ -156,6 +154,30 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "一括取込は管理者のみ実行できます" }, { status: 403 });
   }
 
+  // 分割送信（品番マスタのように4MBを超える大きいファイル向け）。
+  // ブラウザで解析・名寄せ済みのレコードをまとめて受け取る。
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    let body: { kind?: string; items?: ItemRowInput[] };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "不正なリクエストです" }, { status: 400 });
+    }
+    if (body.kind !== "items" || !Array.isArray(body.items)) {
+      return NextResponse.json({ error: "対応していない取込です" }, { status: 400 });
+    }
+    try {
+      const count = await upsertItemsBatch(session.companyId, body.items);
+      return NextResponse.json({ ok: true, kind: "items", count });
+    } catch (e) {
+      console.error("[import-excel] items chunk", e);
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "取込に失敗しました" },
+        { status: 500 }
+      );
+    }
+  }
+
   let form: FormData;
   try {
     form = await req.formData();
@@ -215,46 +237,8 @@ export async function POST(req: Request) {
       if (!h.has("品目CD")) {
         return NextResponse.json({ error: "ヘッダに「品目CD」がありません。テンプレートをご利用ください。" }, { status: 422 });
       }
-      // 「単位ＣＤ」(全角) と「単位CD」(半角) のどちらの表記でも受け付ける
-      const unitCol = h.has("単位ＣＤ") ? "単位ＣＤ" : "単位CD";
-      // 同じ品目CDが品目区分違いで複数行あるため、区分はまとめて（例: 3/7）保持する
-      const merged = new Map<string, ItemRowInput>();
-      const classes = new Map<string, Set<string>>();
-      for (const r of dataRows) {
-        const code = get(r, "品目CD");
-        if (!code) continue;
-        const branch = get(r, "枝番") || null;
-        const key = `${code}\u0000${branch ?? ""}`;
-        const cls = get(r, "品目区分");
-        if (cls) {
-          const set = classes.get(key) ?? new Set<string>();
-          set.add(cls);
-          classes.set(key, set);
-        }
-        const prev = merged.get(key);
-        const pick = (cur: string | null | undefined, next: string) => (next ? next : (cur ?? null));
-        merged.set(key, {
-          code,
-          branch,
-          name: pick(prev?.name, get(r, "品名")) ?? "",
-          unitCd: pick(prev?.unitCd, get(r, unitCol)),
-          taxCd: pick(prev?.taxCd, get(r, "仕入税CD")),
-          notes: pick(prev?.notes, get(r, "備考")),
-          acctCd: pick(prev?.acctCd, get(r, "科目")),
-          acctName: pick(prev?.acctName, get(r, "科目名")),
-          acctDetail: pick(prev?.acctDetail, get(r, "科目内訳")),
-          icsName: pick(prev?.icsName, get(r, "借方ICS科目名（製造）", "借方ICS科目名(製造)")),
-          itemClass: null,
-          materialClass: pick(prev?.materialClass, get(r, "材料区分")),
-        });
-      }
-      for (const [key, v] of merged) {
-        const set = classes.get(key);
-        v.itemClass = set && set.size > 0 ? [...set].sort().join("/") : null;
-      }
-      const payload = [...merged.values()];
-      const skipped = dataRows.filter((r) => get(r, "品目CD")).length - payload.length;
-      const count = await upsertItemsBatch(session.companyId, payload);
+      const { items, skipped } = mergeItemRows(rows);
+      const count = await upsertItemsBatch(session.companyId, items);
       return NextResponse.json({
         ok: true,
         kind,

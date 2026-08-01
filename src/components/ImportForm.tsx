@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, FileUp, Loader2 } from "lucide-react";
+import { parseCsv } from "@/lib/csv";
+import { mergeItemRows } from "@/lib/itemImport";
 
 export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "history-reasons";
 type Kind = ImportKind;
@@ -39,8 +41,44 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
   const [kind, setKind] = useState<Kind>(kinds[0]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState("");
   const [result, setResult] = useState<string>("");
   const [error, setError] = useState<string>("");
+
+  /**
+   * 品番マスタのCSVはブラウザで解析・名寄せしてから分割送信する。
+   * 7万行規模のファイルは1リクエストの上限（4MB）を超えるため。
+   */
+  async function runItemsCsv(f: File) {
+    const CHUNK = 2000;
+    setProgress("ファイルを解析中…");
+    const { items, skipped } = mergeItemRows(parseCsv(await f.text()));
+    if (items.length === 0) {
+      setError("取込できる行がありません（1行目はヘッダ・「品目CD」列が必要です）。");
+      return;
+    }
+    let done = 0;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      setProgress(`登録中… ${done.toLocaleString()} / ${items.length.toLocaleString()} 件`);
+      const res = await fetch("/api/import-excel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "items", items: items.slice(i, i + CHUNK) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(`${done.toLocaleString()} 件まで登録しました。${data.error ?? "取込に失敗しました。"}（再実行すると続きから取り込めます）`);
+        return;
+      }
+      done += data.count ?? 0;
+    }
+    setProgress("");
+    setResult(`${done.toLocaleString()} 件を登録しました。`);
+    if (skipped > 0) {
+      setError(`同じ品目CDの行が ${skipped.toLocaleString()} 件ありました（品目区分は「3/7」のようにまとめて登録しています）`);
+    }
+    router.refresh();
+  }
 
   async function run() {
     if (!file) {
@@ -50,7 +88,13 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
     setBusy(true);
     setError("");
     setResult("");
+    setProgress("");
     try {
+      // 大きい品番マスタのCSVは分割送信（サイズ上限・タイムアウトを避ける）
+      if (kind === "items" && /\.(csv|tsv|txt)$/i.test(file.name)) {
+        await runItemsCsv(file);
+        return;
+      }
       const fd = new FormData();
       fd.set("file", file);
       fd.set("kind", kind);
@@ -90,6 +134,7 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
       }
     } finally {
       setBusy(false);
+      setProgress("");
     }
   }
 
@@ -134,9 +179,20 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff1f2] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#e11d48] hover:file:bg-[#dbe8ff]"
           />
-          <p className="mt-1 text-xs text-[#a0a0a0]">Excel (.xlsx) または CSV。1行目はヘッダ。最大4MB。</p>
+          <p className="mt-1 text-xs text-[#a0a0a0]">
+            Excel (.xlsx) または CSV。1行目はヘッダ。
+            {kind === "items"
+              ? "Excelは4MBまで。それを超える場合は「CSV UTF-8」で保存してください（分割送信するのでサイズ制限はありません）。"
+              : "最大4MB。"}
+          </p>
         </div>
 
+        {progress && (
+          <div className="mb-3 flex items-center gap-2 rounded-lg border border-[#e5e5e5] bg-[#fafafa] px-3 py-2 text-sm text-[#555555]">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {progress}
+          </div>
+        )}
         {error && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
             {error}

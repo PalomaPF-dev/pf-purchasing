@@ -12,7 +12,6 @@ import {
   Users,
   Download,
   DatabaseZap,
-  Settings,
   LogOut,
   Mail,
   BookOpen,
@@ -41,7 +40,6 @@ const NAV: NavGroup[] = [
       { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
       { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
       { href: "/employees", label: "ユーザー登録", icon: Users, adminOnly: true },
-      { href: "/settings", label: "承認W/F設定", icon: Settings, adminOnly: true },
       // 運用開始時の1回限りの作業（日常運用では使わない）
       { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },
     ],
