@@ -29,7 +29,7 @@ let schemaReady: Promise<void> | null = null;
  * - price_request_lines  … 単価申請明細（承認用紙1枚＝1明細）
  * - request_approvals    … 承認ログ（MGR/部門長の各段階）
  * - request_messages     … 承認スレッド（申請者⇄承認者のメッセージ）
- * - price_history        … 単価台帳・改訂履歴（mcframe からの移行＋承認反映）
+ * - price_history        … 単価履歴（改訂履歴）（mcframe からの移行＋承認反映）
  *
  * 認証テーブル（companies/users）も同時に用意する。
  * 同一プロセス内の同時呼び出しは1回の実行に集約（共有プロミス）。失敗時は次回再試行できるよう解除。
@@ -168,7 +168,7 @@ async function buildSchema(): Promise<void> {
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS request_messages_request_idx ON request_messages(request_id, created_at)`);
 
-  // 単価台帳・改訂履歴（mcframe の購買単価に相当。移行データ＋承認反映で積み上がる）
+  // 単価履歴（改訂履歴）（mcframe の購買単価に相当。移行データ＋承認反映で積み上がる）
   await safeDdl(() => sql`
     CREATE TABLE IF NOT EXISTS price_history (
       id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),

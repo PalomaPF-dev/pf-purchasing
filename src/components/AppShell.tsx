@@ -22,7 +22,7 @@ const NAV: NavItem[] = [
   { href: "/", label: "ダッシュボード", icon: LayoutDashboard },
   { href: "/requests", label: "単価申請", icon: FileText },
   { href: "/approvals", label: "承認", icon: Stamp, adminOnly: true },
-  { href: "/prices", label: "単価台帳・履歴", icon: History },
+  { href: "/prices", label: "単価履歴", icon: History },
   { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
   { href: "/suppliers", label: "取引先マスタ", icon: Building2, adminOnly: true },
   { href: "/import", label: "一括取込", icon: Upload, adminOnly: true },

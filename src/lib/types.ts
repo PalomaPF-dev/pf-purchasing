@@ -118,7 +118,7 @@ export interface RequestMessage {
   createdAt: string;
 }
 
-/** 単価台帳・履歴の1行 */
+/** 単価履歴の1行 */
 export interface PriceHistoryRow {
   id: string;
   itemCd: string;

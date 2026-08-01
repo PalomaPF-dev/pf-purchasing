@@ -16,7 +16,7 @@ export default async function ApprovalsPage() {
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader
         title="承認"
-        description="承認待ちの単価申請。MGR承認 → 部門長承認の2段階で承認され、部門長承認で単価台帳に反映されます。"
+        description="承認待ちの単価申請。MGR承認 → 部門長承認の2段階で承認され、部門長承認で単価履歴に反映されます。"
       />
       {awaiting.length === 0 ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-sm text-[#707070]">

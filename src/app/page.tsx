@@ -164,10 +164,10 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
               <History className="h-4 w-4 text-[#2563eb]" />
-              単価台帳（最新）
+              単価履歴（最新）
             </h2>
             <Link href="/prices" className="flex items-center gap-1 text-xs text-[#2563eb] hover:underline">
-              台帳・履歴を見る <ArrowRight className="h-3 w-3" />
+              単価履歴を見る <ArrowRight className="h-3 w-3" />
             </Link>
           </div>
           {recent.rows.length === 0 ? (

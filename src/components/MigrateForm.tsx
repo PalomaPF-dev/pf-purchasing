@@ -187,7 +187,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
         <h2 className="mb-2 text-sm font-bold text-[#333333]">単価情報（mcframe）の取り込み</h2>
         <ol className="mb-4 list-decimal space-y-1 pl-5 text-sm text-[#707070]">
           <li>mcframe からエクスポートした「単価情報」の Excel を開き、「CSV UTF-8（コンマ区切り）」で保存します。</li>
-          <li>保存した CSV を下で選択すると、1,000行ずつ自動送信されます（21万行で数分程度）。</li>
+          <li>保存した CSV を下で選択すると、1,000行ずつ自動送信されます（21万行で数分程度）。送信中はこのページを開いたままにしてください。</li>
           <li>論理削除行（del_flg≠0）はスキップされます。再実行しても同じ行は二重登録されません。</li>
         </ol>
         <input
@@ -235,7 +235,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
         {done && (
           <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
             <DatabaseZap className="h-4 w-4" />
-            移行が完了しました。単価台帳・履歴から確認できます。
+            移行が完了しました。単価履歴から確認できます。
           </div>
         )}
       </div>

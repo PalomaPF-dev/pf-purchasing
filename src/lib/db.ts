@@ -393,7 +393,7 @@ export async function submitRequest(
 
 /**
  * 承認（stage=mgr: pending → mgr_approved、stage=dept: mgr_approved → approved）。
- * 部門長承認で単価台帳（price_history）へ反映する。
+ * 部門長承認で単価履歴（price_history）へ反映する。
  */
 export async function approveRequest(
   companyId: string,
@@ -458,7 +458,7 @@ export async function rejectRequest(
 }
 
 /**
- * 承認済み明細を単価台帳へ反映する。
+ * 承認済み明細を単価履歴へ反映する。
  * 同一キー（品目CD・枝番・発注先CD・納入場所CD・納品先CD）の直前の適用中レコードは
  * 新適用開始日の前日で適用終了に更新し、新しい行を末尾（適用終了 2099/12/31）として追加する。
  */
@@ -506,7 +506,7 @@ export async function addRequestMessage(
     VALUES (${companyId}, ${requestId}, ${author.loginId}, ${author.name}, ${body}, ${isSystem})`;
 }
 
-// ===== 単価台帳・履歴 =====
+// ===== 単価履歴 =====
 
 export async function listPrices(
   companyId: string,
