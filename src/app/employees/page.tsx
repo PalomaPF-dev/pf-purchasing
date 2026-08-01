@@ -29,9 +29,14 @@ export default async function EmployeesPage({
   // 承認W/Fの現在の指定（この画面での設定がそのまま承認者になる）
   const mgrs = rows.filter((e) => e.active && e.wfRole === "mgr");
   const depts = rows.filter((e) => e.active && e.wfRole === "dept");
+  // 承認担当者の候補（検索中でも全員から選べるように別途取得）
+  const all = q ? await listEmployees(session.companyId) : rows;
+  const toC = (list: typeof rows) => list.map((e) => ({ loginId: e.loginId, name: e.name }));
+  const mgrCandidates = toC(all.filter((e) => e.active && e.wfRole === "mgr"));
+  const deptCandidates = toC(all.filter((e) => e.active && e.wfRole === "dept"));
 
   return (
-    <div className="mx-auto max-w-4xl p-4 sm:p-6">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader
         title="ユーザー登録（社員マスタ）"
         description={`社員番号・氏名・承認W/F・権限を管理し、ログインユーザーをまとめて登録します（全 ${rows.length.toLocaleString()} 名）。取引先の担当窓口の名寄せにも使います。`}
@@ -47,6 +52,11 @@ export default async function EmployeesPage({
           一覧の「承認W/F」欄で {wf.mgrLabel} / {wf.deptLabel} を選ぶと、その社員が単価申請の承認者になります（保存した時点で反映されます）。
           単価申請は <span className="font-medium">{wf.mgrLabel}承認 → {wf.deptLabel}承認</span> の2段階です。
           どちらも未指定の場合は、すべての管理者が承認できます。
+        </p>
+        <p className="mb-3 text-sm text-[#707070]">
+          {wf.mgrLabel}が複数いる場合は、一覧の「承認{wf.mgrLabel}」「承認{wf.deptLabel}」欄で
+          <span className="font-medium">ユーザーごとに承認担当者を割り当て</span>できます。
+          割り当てると、その人の申請はその担当者だけが承認・差し戻しできます（未割当なら該当段階の承認者全員）。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {(
@@ -91,9 +101,9 @@ export default async function EmployeesPage({
 
       <form
         action={upsertEmployeeAction}
-        className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-7"
+        className="mb-4 grid grid-cols-2 gap-2 rounded-xl border border-[#e5e5e5] bg-white p-4 sm:grid-cols-5"
       >
-        <div className="col-span-2 sm:col-span-7">
+        <div className="col-span-2 sm:col-span-5">
           <h2 className="text-sm font-bold text-[#333333]">社員を追加</h2>
           <p className="text-xs text-[#a0a0a0]">
             既に登録済みの社員番号を入力すると、その社員の内容を上書きします。登録後の修正は一覧の鉛筆アイコンから行えます。
@@ -123,6 +133,28 @@ export default async function EmployeesPage({
           </select>
         </div>
         <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">承認{wf.mgrLabel}</label>
+          <select name="mgrLoginId" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm">
+            <option value="">全{wf.mgrLabel}</option>
+            {mgrCandidates.map((c) => (
+              <option key={c.loginId} value={c.loginId}>
+                {c.name || c.loginId}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">承認{wf.deptLabel}</label>
+          <select name="deptLoginId" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm">
+            <option value="">全{wf.deptLabel}</option>
+            {deptCandidates.map((c) => (
+              <option key={c.loginId} value={c.loginId}>
+                {c.name || c.loginId}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">メールアドレス</label>
           <input name="email" type="email" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm" />
         </div>
@@ -143,6 +175,8 @@ export default async function EmployeesPage({
               <th className="px-2 py-2.5 font-medium">氏名</th>
               <th className="px-2 py-2.5 font-medium">承認W/F</th>
               <th className="px-2 py-2.5 font-medium">権限</th>
+              <th className="px-2 py-2.5 font-medium">承認{wf.mgrLabel}</th>
+              <th className="px-2 py-2.5 font-medium">承認{wf.deptLabel}</th>
               <th className="px-2 py-2.5 font-medium">メールアドレス</th>
               <th className="px-2 py-2.5 font-medium">ユーザー</th>
               <th className="px-2 py-2.5 font-medium"></th>
@@ -150,7 +184,14 @@ export default async function EmployeesPage({
           </thead>
           <tbody>
             {rows.map((e) => (
-              <EmployeeRow key={e.id} employee={e} />
+              <EmployeeRow
+                key={e.id}
+                employee={e}
+                mgrCandidates={mgrCandidates}
+                deptCandidates={deptCandidates}
+                mgrLabel={wf.mgrLabel}
+                deptLabel={wf.deptLabel}
+              />
             ))}
           </tbody>
         </table>

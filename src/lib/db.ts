@@ -525,6 +525,33 @@ export async function cancelApproval(
 }
 
 /**
+ * その申請をその人が承認・差し戻しできるかを検証する。できない場合は理由つきで例外。
+ * 申請者に承認担当者が割り当てられていればその人だけ、無ければ承認者リストで判定する。
+ */
+async function assertCanApprove(
+  companyId: string,
+  requestId: string,
+  stage: ApprovalStage,
+  approverLoginId: string | null
+): Promise<void> {
+  const sql = getSql();
+  const wf = await getWfSettings(companyId);
+  const rows = (await sql`
+    SELECT applicant_login_id FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[];
+  const assigned = await assignedApprovers(companyId, rows[0]?.applicant_login_id ?? null);
+  if (canApproveRequest(wf, stage, approverLoginId, assigned)) return;
+  const label = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
+  const target = stage === "mgr" ? assigned.mgr : assigned.dept;
+  if (!target) throw new Error(`${label}承認の権限がありません（承認者に指定されていません）。`);
+  const who = (await sql`
+    SELECT name FROM employees
+    WHERE company_id = ${companyId} AND login_id = ${target} LIMIT 1`) as any[];
+  const name = who[0]?.name ? `${who[0].name}さん` : `社員番号 ${target} の方`;
+  throw new Error(`${label}承認の権限がありません（この申請の${label}担当は ${name} です）。`);
+}
+
+/**
  * 承認（stage=mgr: pending → mgr_approved、stage=dept: mgr_approved → approved）。
  * 部門長承認で単価履歴（price_history）へ反映する。
  */
@@ -538,10 +565,7 @@ export async function approveRequest(
   await ensureSchema();
   const sql = getSql();
   const wf = await getWfSettings(companyId);
-  if (!canApproveStage(wf, stage, approver.loginId)) {
-    const label = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
-    throw new Error(`${label}承認の権限がありません（承認者に指定されていません）。`);
-  }
+  await assertCanApprove(companyId, requestId, stage, approver.loginId);
   const from = stage === "mgr" ? "pending" : "mgr_approved";
   // 1段階運用ではMGR承認で完了扱いにする
   const to = stage === "mgr" ? (wf.stages === 1 ? "approved" : "mgr_approved") : "approved";
@@ -577,6 +601,7 @@ export async function rejectRequest(
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
+  await assertCanApprove(companyId, requestId, stage, approver.loginId);
   const from = stage === "mgr" ? "pending" : "mgr_approved";
   const rows = await sql`
     UPDATE price_requests SET status = 'rejected', updated_at = NOW()
@@ -716,6 +741,55 @@ export async function saveWfSettings(companyId: string, w: WfSettings): Promise<
  * その段階を承認できるユーザーか。
  * 承認者リストが空の段階は、全管理者が承認できる（既定の運用）。
  */
+/**
+ * 申請者に割り当てられた承認担当者（社員マスタの mgr_login_id / dept_login_id）。
+ * MGRが複数いる場合に、申請者ごとにどのMGRが承認するかを決めるために使う。
+ */
+export async function assignedApprovers(
+  companyId: string,
+  applicantLoginId: string | null
+): Promise<{ mgr: string | null; dept: string | null }> {
+  if (!applicantLoginId) return { mgr: null, dept: null };
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT mgr_login_id, dept_login_id FROM employees
+    WHERE company_id = ${companyId} AND login_id = ${applicantLoginId} LIMIT 1`) as any[];
+  return { mgr: rows[0]?.mgr_login_id ?? null, dept: rows[0]?.dept_login_id ?? null };
+}
+
+/** 申請者ごとの承認担当者の一覧（承認画面の絞り込み用）。 */
+export async function assignedApproverMap(
+  companyId: string
+): Promise<Map<string, { mgr: string | null; dept: string | null }>> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT login_id, mgr_login_id, dept_login_id FROM employees
+    WHERE company_id = ${companyId}`) as any[];
+  const m = new Map<string, { mgr: string | null; dept: string | null }>();
+  for (const r of rows) {
+    m.set(r.login_id, { mgr: r.mgr_login_id ?? null, dept: r.dept_login_id ?? null });
+  }
+  return m;
+}
+
+/**
+ * その申請を、その人が承認できるか。
+ * 申請者に承認担当者が割り当てられていればその人だけ、
+ * 割り当てが無ければ承認W/Fの承認者リスト（空なら全管理者）で判定する。
+ */
+export function canApproveRequest(
+  wf: WfSettings,
+  stage: ApprovalStage,
+  approverLoginId: string | null,
+  assigned: { mgr: string | null; dept: string | null }
+): boolean {
+  const target = stage === "mgr" ? assigned.mgr : assigned.dept;
+  if (target) return approverLoginId === target;
+  return canApproveStage(wf, stage, approverLoginId);
+}
+
 export function canApproveStage(
   wf: WfSettings,
   stage: ApprovalStage,
@@ -1590,6 +1664,12 @@ export interface Employee {
   role: "admin" | "member";
   email: string | null;
   active: boolean;
+  /** この社員の申請を承認する担当者（社員番号）。未設定なら承認者全員が承認できる */
+  mgrLoginId: string | null;
+  deptLoginId: string | null;
+  /** 承認担当者の氏名（表示用） */
+  mgrName?: string | null;
+  deptName?: string | null;
   /** アプリのユーザーとして登録済みか */
   userExists?: boolean;
 }
@@ -1618,7 +1698,12 @@ export async function listEmployees(
   const sql = getSql();
   const q = opts.q ? `%${opts.q}%` : null;
   const rows = await sql`
-    SELECT e.*, EXISTS (SELECT 1 FROM users u WHERE u.login_id = e.login_id) AS user_exists
+    SELECT e.*,
+      EXISTS (SELECT 1 FROM users u WHERE u.login_id = e.login_id) AS user_exists,
+      (SELECT m.name FROM employees m
+        WHERE m.company_id = e.company_id AND m.login_id = e.mgr_login_id) AS mgr_name,
+      (SELECT d.name FROM employees d
+        WHERE d.company_id = e.company_id AND d.login_id = e.dept_login_id) AS dept_name
     FROM employees e
     WHERE e.company_id = ${companyId}
       AND (${q}::text IS NULL OR e.login_id ILIKE ${q} OR e.name ILIKE ${q})
@@ -1631,6 +1716,10 @@ export async function listEmployees(
     role: r.role === "admin" ? "admin" : "member",
     email: r.email ?? null,
     active: Boolean(r.active),
+    mgrLoginId: r.mgr_login_id ?? null,
+    deptLoginId: r.dept_login_id ?? null,
+    mgrName: r.mgr_name ?? null,
+    deptName: r.dept_name ?? null,
     userExists: Boolean(r.user_exists),
   }));
 }
@@ -1664,19 +1753,24 @@ export async function upsertEmployee(
     wfRole?: "mgr" | "dept" | null;
     role?: "admin" | "member";
     email?: string | null;
+    mgrLoginId?: string | null;
+    deptLoginId?: string | null;
   }
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   await sql`
-    INSERT INTO employees (company_id, login_id, name, wf_role, role, email)
+    INSERT INTO employees (company_id, login_id, name, wf_role, role, email, mgr_login_id, dept_login_id)
     VALUES (${companyId}, ${e.loginId.trim()}, ${normalizeName(e.name)},
-            ${e.wfRole ?? null}, ${e.role ?? "member"}, ${e.email ?? null})
+            ${e.wfRole ?? null}, ${e.role ?? "member"}, ${e.email ?? null},
+            ${e.mgrLoginId ?? null}, ${e.deptLoginId ?? null})
     ON CONFLICT (company_id, login_id) DO UPDATE SET
       name = EXCLUDED.name,
       wf_role = EXCLUDED.wf_role,
       role = EXCLUDED.role,
       email = COALESCE(EXCLUDED.email, employees.email),
+      mgr_login_id = COALESCE(EXCLUDED.mgr_login_id, employees.mgr_login_id),
+      dept_login_id = COALESCE(EXCLUDED.dept_login_id, employees.dept_login_id),
       active = true,
       updated_at = NOW()`;
   await refreshApproversFromEmployees(companyId);
@@ -1695,6 +1789,8 @@ export async function updateEmployee(
     role: "admin" | "member";
     email: string | null;
     active: boolean;
+    mgrLoginId: string | null;
+    deptLoginId: string | null;
   }
 ): Promise<void> {
   await ensureSchema();
@@ -1706,6 +1802,8 @@ export async function updateEmployee(
       role = ${e.role},
       email = ${e.email},
       active = ${e.active},
+      mgr_login_id = ${e.mgrLoginId},
+      dept_login_id = ${e.deptLoginId},
       updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${id}
     RETURNING id`;

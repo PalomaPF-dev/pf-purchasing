@@ -12,13 +12,28 @@ const WF_LABEL: Record<string, string> = { mgr: "MGR", dept: "部門長" };
  * 社員マスタの1行。「編集」で氏名・承認W/F・権限・メール・状態をその場で修正できる。
  * 社員番号はログインユーザー・承認者との紐付けキーのため変更できない。
  */
-export default function EmployeeRow({ employee }: { employee: Employee }) {
+export default function EmployeeRow({
+  employee,
+  mgrCandidates,
+  deptCandidates,
+  mgrLabel,
+  deptLabel,
+}: {
+  employee: Employee;
+  /** 承認担当者の候補（承認W/Fで MGR / 部門長 に指定された社員） */
+  mgrCandidates: { loginId: string; name: string }[];
+  deptCandidates: { loginId: string; name: string }[];
+  mgrLabel: string;
+  deptLabel: string;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const [name, setName] = useState(employee.name);
+  const [mgrLoginId, setMgrLoginId] = useState(employee.mgrLoginId ?? "");
+  const [deptLoginId, setDeptLoginId] = useState(employee.deptLoginId ?? "");
   const [wfRole, setWfRole] = useState<string>(employee.wfRole ?? "");
   const [role, setRole] = useState<string>(employee.role);
   const [email, setEmail] = useState(employee.email ?? "");
@@ -26,6 +41,8 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
 
   function reset() {
     setName(employee.name);
+    setMgrLoginId(employee.mgrLoginId ?? "");
+    setDeptLoginId(employee.deptLoginId ?? "");
     setWfRole(employee.wfRole ?? "");
     setRole(employee.role);
     setEmail(employee.email ?? "");
@@ -43,6 +60,8 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
       role: role === "admin" ? "admin" : "member",
       email,
       active,
+      mgrLoginId,
+      deptLoginId,
     })
       .then(() => {
         setEditing(false);
@@ -86,6 +105,26 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
           )}
         </td>
         <td className="px-2 py-2">{employee.role === "admin" ? "管理者" : "一般"}</td>
+        <td className="px-2 py-2 text-xs">
+          {employee.mgrLoginId ? (
+            <>
+              {employee.mgrName || employee.mgrLoginId}
+              <span className="ml-1 font-mono text-[10px] text-[#909090]">（{employee.mgrLoginId}）</span>
+            </>
+          ) : (
+            <span className="text-[#a0a0a0]">全{mgrLabel}</span>
+          )}
+        </td>
+        <td className="px-2 py-2 text-xs">
+          {employee.deptLoginId ? (
+            <>
+              {employee.deptName || employee.deptLoginId}
+              <span className="ml-1 font-mono text-[10px] text-[#909090]">（{employee.deptLoginId}）</span>
+            </>
+          ) : (
+            <span className="text-[#a0a0a0]">全{deptLabel}</span>
+          )}
+        </td>
         <td className="px-2 py-2 text-xs">
           {employee.email || <span className="text-[#a0a0a0]">—</span>}
         </td>
@@ -148,6 +187,26 @@ export default function EmployeeRow({ employee }: { employee: Employee }) {
         <select value={role} onChange={(e) => setRole(e.target.value)} className={cell}>
           <option value="member">一般</option>
           <option value="admin">管理者</option>
+        </select>
+      </td>
+      <td className="px-2 py-2">
+        <select value={mgrLoginId} onChange={(e) => setMgrLoginId(e.target.value)} className={cell}>
+          <option value="">全{mgrLabel}</option>
+          {mgrCandidates.map((c) => (
+            <option key={c.loginId} value={c.loginId}>
+              {c.name || c.loginId}
+            </option>
+          ))}
+        </select>
+      </td>
+      <td className="px-2 py-2">
+        <select value={deptLoginId} onChange={(e) => setDeptLoginId(e.target.value)} className={cell}>
+          <option value="">全{deptLabel}</option>
+          {deptCandidates.map((c) => (
+            <option key={c.loginId} value={c.loginId}>
+              {c.name || c.loginId}
+            </option>
+          ))}
         </select>
       </td>
       <td className="px-2 py-2">
