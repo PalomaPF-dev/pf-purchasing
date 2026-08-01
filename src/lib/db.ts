@@ -104,6 +104,15 @@ function mapHistory(r: any): PriceHistoryRow {
     priceBefore: num(r.price_before),
     taxCd: r.tax_cd ?? null,
     reason: r.reason ?? null,
+    bdSupplyMat: num(r.bd_supply_mat),
+    bdMaterial: num(r.bd_material),
+    bdRevision: num(r.bd_revision),
+    bdDesign: num(r.bd_design),
+    bdForex: num(r.bd_forex),
+    bdOther: num(r.bd_other),
+    reqNo: r.req_no != null ? Number(r.req_no) : null,
+    applicantName: r.applicant_name ?? null,
+    approvedAt: r.approved_at ? tsStr(r.approved_at) : null,
     source: (r.source ?? "approval") as "migration" | "approval",
     requestLineId: r.request_line_id ?? null,
     createdAt: tsStr(r.created_at),
@@ -467,6 +476,12 @@ async function applyApprovedToHistory(companyId: string, requestId: string): Pro
   const lines = await sql`
     SELECT * FROM price_request_lines
     WHERE company_id = ${companyId} AND request_id = ${requestId} ORDER BY seq`;
+  // 申請情報（申請No・申請者）も履歴に残し、後から改訂の経緯をたどれるようにする
+  const reqRows = await sql`
+    SELECT req_no, applicant_name FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`;
+  const reqNo = (reqRows as any[])[0]?.req_no ?? null;
+  const applicantName = (reqRows as any[])[0]?.applicant_name ?? null;
   for (const l of lines as any[]) {
     // 直前の適用中レコードを閉じる（同一キーで開始日が新開始日より前、終了日が新開始日以降）
     await sql`
@@ -483,12 +498,16 @@ async function applyApprovedToHistory(companyId: string, requestId: string): Pro
       INSERT INTO price_history (
         company_id, item_cd, item_branch, item_name, supplier_cd, supplier_name,
         unit_cd, lot_qty, currency, loc_cd, dlv_cd, wg_cd,
-        start_date, end_date, price, price_before, tax_cd, reason, source, request_line_id
+        start_date, end_date, price, price_before, tax_cd, reason, source, request_line_id,
+        bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
+        req_no, applicant_name, approved_at
       ) VALUES (
         ${companyId}, ${l.item_cd}, ${l.item_branch}, ${l.item_name}, ${l.supplier_cd}, ${l.supplier_name},
         ${l.unit_cd}, ${l.lot_qty}, ${l.currency}, ${l.loc_cd}, ${l.dlv_cd}, ${l.wg_cd},
         ${l.start_date}, ${l.end_date}, ${l.new_price}, ${l.current_price}, ${l.tax_cd},
-        ${l.reason_note}, 'approval', ${l.id}
+        ${l.reason_note}, 'approval', ${l.id},
+        ${l.bd_supply_mat}, ${l.bd_material}, ${l.bd_revision}, ${l.bd_design}, ${l.bd_forex}, ${l.bd_other},
+        ${reqNo}, ${applicantName}, NOW()
       )`;
   }
 }
@@ -776,6 +795,86 @@ export async function searchItems(companyId: string, q: string, limit = 12): Pro
     taxCd: r.tax_cd ?? null,
     notes: r.notes ?? null,
     active: Boolean(r.active),
+  }));
+}
+
+/** 発注先で取引実績のある品目（単価履歴ベース）。単価申請は発注先ごとに行うため、その候補を返す。 */
+export interface SupplierItem {
+  code: string;
+  branch: string | null;
+  name: string;
+  unitCd: string | null;
+  lotQty: number | null;
+  /** 現在適用中の単価（見つからなければ最新の単価） */
+  currentPrice: number | null;
+  /** その単価の適用開始日 */
+  startDate: string | null;
+  locCd: string | null;
+  dlvCd: string | null;
+}
+
+/**
+ * 発注先の取引品目を検索する（品目CD・品名の部分一致）。
+ * 単価履歴から品目×納入場所ごとの最新行を取り、品名はマスタを優先して補完する。
+ * q が空なら取引量の多い順ではなく品目CD順に先頭を返す（発注先選択直後の初期候補）。
+ */
+export async function searchSupplierItems(
+  companyId: string,
+  supplierCd: string,
+  q: string,
+  limit = 20
+): Promise<SupplierItem[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const pat = q ? `%${q}%` : null;
+  const rows = await sql`
+    SELECT DISTINCT ON (h.item_cd, COALESCE(h.item_branch, '*'), COALESCE(h.loc_cd, '*'))
+      h.item_cd, h.item_branch, h.unit_cd, h.lot_qty, h.price, h.start_date, h.loc_cd, h.dlv_cd,
+      COALESCE(NULLIF(i.name, ''), h.item_name, '') AS name
+    FROM price_history h
+    LEFT JOIN items i
+      ON i.company_id = h.company_id AND i.code = h.item_cd
+     AND i.branch = COALESCE(h.item_branch, '*')
+    WHERE h.company_id = ${companyId} AND h.supplier_cd = ${supplierCd}
+      AND (${pat}::text IS NULL
+           OR h.item_cd ILIKE ${pat} OR i.name ILIKE ${pat} OR h.item_name ILIKE ${pat})
+    ORDER BY h.item_cd, COALESCE(h.item_branch, '*'), COALESCE(h.loc_cd, '*'), h.start_date DESC
+    LIMIT ${Math.min(limit, 50)}`;
+  return (rows as any[]).map((r) => ({
+    code: r.item_cd,
+    branch: r.item_branch && r.item_branch !== "*" ? r.item_branch : null,
+    name: r.name ?? "",
+    unitCd: r.unit_cd ?? null,
+    lotQty: num(r.lot_qty),
+    currentPrice: num(r.price),
+    startDate: r.start_date ? dateStr(r.start_date) : null,
+    locCd: r.loc_cd && r.loc_cd !== "*" ? r.loc_cd : null,
+    dlvCd: r.dlv_cd && r.dlv_cd !== "*" ? r.dlv_cd : null,
+  }));
+}
+
+/** 取引実績のある発注先の検索（単価履歴＋取引先マスタ）。申請の起点となる発注先選択に使う。 */
+export async function searchActiveSuppliers(
+  companyId: string,
+  q: string,
+  limit = 20
+): Promise<{ code: string; name: string; itemCount: number }[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const pat = q ? `%${q}%` : null;
+  const rows = await sql`
+    SELECT s.code, s.name,
+      (SELECT COUNT(DISTINCT h.item_cd)::int FROM price_history h
+        WHERE h.company_id = s.company_id AND h.supplier_cd = s.code) AS item_count
+    FROM suppliers s
+    WHERE s.company_id = ${companyId} AND s.active
+      AND (${pat}::text IS NULL OR s.code ILIKE ${pat} OR s.name ILIKE ${pat})
+    ORDER BY s.code
+    LIMIT ${Math.min(limit, 50)}`;
+  return (rows as any[]).map((r) => ({
+    code: r.code,
+    name: r.name ?? "",
+    itemCount: Number(r.item_count ?? 0),
   }));
 }
 
