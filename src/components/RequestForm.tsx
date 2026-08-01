@@ -1,9 +1,10 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileUp, Loader2, Plus, Search, Trash2 } from "lucide-react";
+import { FileUp, Plus, Search, Trash2 } from "lucide-react";
 import { createRequestAction, updateRequestAction } from "@/lib/actions";
+import QuoteImport, { type QuoteAppliedLine } from "@/components/QuoteImport";
 import type { LineInput, PriceRequestLine } from "@/lib/types";
 
 /** フォーム上の明細行（文字列で保持し、送信時に数値化） */
@@ -149,7 +150,7 @@ function bdSum(l: FormLine): number | null {
 
 /**
  * 単価申請フォーム（新規・下書き編集共通）。
- * - 見積書（PDF/画像）のAI読み取りで明細を自動入力
+ * - 見積書（Excel/PDF/画像）のAI読み取り→プレビュー確認→明細へ反映
  * - 品番・取引先マスタのインクリメンタル検索
  * - 現行単価の自動取得（単価履歴から）
  */
@@ -173,8 +174,8 @@ export default function RequestForm({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<"none" | "draft" | "submit">("none");
-  const [quoteLoading, setQuoteLoading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  // 見積書取り込みパネルの開閉（新規作成時は既定で開く）
+  const [showQuoteImport, setShowQuoteImport] = useState(!requestId);
 
   function update(i: number, patch: Partial<FormLine>) {
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -246,66 +247,28 @@ export default function RequestForm({
     }
   }
 
-  /** 見積書AI取り込み */
-  async function importQuote(file: File) {
-    setQuoteLoading(true);
-    setError("");
-    try {
-      const buf = await file.arrayBuffer();
-      let binary = "";
-      const bytes = new Uint8Array(buf);
-      const chunk = 0x8000;
-      for (let i = 0; i < bytes.length; i += chunk) {
-        binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-      }
-      const fileBase64 = btoa(binary);
-      const res = await fetch("/api/import-quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileBase64, contentType: file.type || "application/pdf", fileName: file.name }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data.error ?? "見積書の読み取りに失敗しました。");
-        return;
-      }
-      const q = data.quote as {
-        supplierCd: string | null;
-        supplierName: string | null;
-        effectiveDate: string | null;
-        currency: string | null;
-        items: Array<{
-          itemCd: string | null;
-          itemName: string | null;
-          unitPrice: number;
-          unit: string | null;
-          lotQty: number | null;
-          notes: string | null;
-        }>;
-      };
-      const start = q.effectiveDate ?? today;
-      const newLines: FormLine[] = q.items.map((it) => ({
-        ...emptyLine(start),
-        itemCd: it.itemCd ?? "",
-        itemName: it.itemName ?? "",
-        supplierCd: q.supplierCd ?? "",
-        supplierName: q.supplierName ?? "",
-        unitCd: it.unit ?? "",
-        lotQty: it.lotQty != null ? String(it.lotQty) : "",
-        currency: q.currency ?? "JPY",
-        newPrice: String(it.unitPrice),
-        reasonNote: it.notes ?? "",
-      }));
-      // 既存が空1行だけなら置き換え、そうでなければ追記
-      setLines((prev) => {
-        const isEmpty =
-          prev.length === 1 && !prev[0].itemCd && !prev[0].newPrice && !prev[0].supplierCd;
-        return isEmpty ? newLines : [...prev, ...newLines];
-      });
-    } finally {
-      setQuoteLoading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+  /** 見積書AI取り込みのプレビュー結果を明細へ反映（QuoteImport から呼ばれる） */
+  function applyQuoteLines(applied: QuoteAppliedLine[]) {
+    if (applied.length === 0) return;
+    const newLines: FormLine[] = applied.map((a) => ({
+      ...emptyLine(a.startDate || today),
+      itemCd: a.itemCd,
+      itemName: a.itemName,
+      supplierCd: a.supplierCd,
+      supplierName: a.supplierName,
+      unitCd: a.unitCd,
+      lotQty: a.lotQty,
+      currency: a.currency || "JPY",
+      newPrice: a.newPrice,
+      reasonNote: a.reasonNote,
+    }));
+    // 既存が空1行だけなら置き換え、そうでなければ追記
+    setLines((prev) => {
+      const isEmpty =
+        prev.length === 1 && !prev[0].itemCd && !prev[0].newPrice && !prev[0].supplierCd;
+      return isEmpty ? newLines : [...prev, ...newLines];
+    });
+    setShowQuoteImport(false);
   }
 
   async function save(submit: boolean) {
@@ -368,27 +331,19 @@ export default function RequestForm({
           />
         </div>
         <div>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/pdf,image/png,image/jpeg,image/webp"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void importQuote(f);
-            }}
-          />
           <button
             type="button"
-            disabled={quoteLoading}
-            onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2] disabled:opacity-50"
+            onClick={() => setShowQuoteImport((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
           >
-            {quoteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
-            {quoteLoading ? "見積書を読み取り中…" : "見積書から自動入力（PDF/画像）"}
+            <FileUp className="h-4 w-4" />
+            {showQuoteImport ? "見積書の取り込みを閉じる" : "見積書から取り込む（Excel/PDF/画像）"}
           </button>
         </div>
       </div>
+
+      {/* 見積書のAI取り込み（複数ファイル・プレビュー確認後に明細へ反映） */}
+      {showQuoteImport && <QuoteImport today={today} onApply={applyQuoteLines} />}
 
       {/* 明細 */}
       {lines.map((l, i) => {
