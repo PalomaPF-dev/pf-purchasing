@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { getRequest } from "@/lib/db";
+import { getRequest, getWfSettings } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 
@@ -20,7 +20,10 @@ export default async function RequestPrintPage({
 }) {
   const session = await requireSession();
   const { id } = await params;
-  const detail = await getRequest(session.companyId, id);
+  const [detail, wf] = await Promise.all([
+    getRequest(session.companyId, id),
+    getWfSettings(session.companyId),
+  ]);
   if (!detail) notFound();
   const { request, lines, approvals } = detail;
 
@@ -30,17 +33,6 @@ export default async function RequestPrintPage({
   // 発注先は明細の先頭を代表として見出しに出す（複数取引先が混在する場合は各行にも表示される）
   const head = lines[0];
   const multiSupplier = lines.some((l) => l.supplierCd !== head?.supplierCd);
-
-  // 内訳（改訂理由別）が1件でも入っていれば内訳表を出す
-  const hasBreakdown = lines.some(
-    (l) =>
-      l.bdSupplyMat != null ||
-      l.bdMaterial != null ||
-      l.bdRevision != null ||
-      l.bdDesign != null ||
-      l.bdForex != null ||
-      l.bdOther != null
-  );
 
   return (
     <div className="min-h-screen bg-white">
@@ -89,15 +81,17 @@ export default async function RequestPrintPage({
               <tbody>
                 <tr>
                   <td className={`${th} w-24`}>発行日</td>
-                  <td className={`${th} w-24`}>部門長</td>
-                  <td className={`${th} w-24`}>MGR</td>
+                  {wf.stages === 2 && <td className={`${th} w-24`}>{wf.deptLabel}</td>}
+                  <td className={`${th} w-24`}>{wf.mgrLabel}</td>
                   <td className={`${th} w-24`}>担当</td>
                 </tr>
                 <tr>
                   <td className={`${td} h-20 align-middle text-center text-[11px]`}>
                     {formatDate(request.submittedAt ?? request.createdAt)}
                   </td>
-                  <ApprovalCell name={dept?.approverName} date={dept?.createdAt} />
+                  {wf.stages === 2 && (
+                    <ApprovalCell name={dept?.approverName} date={dept?.createdAt} />
+                  )}
                   <ApprovalCell name={mgr?.approverName} date={mgr?.createdAt} />
                   <ApprovalCell name={request.applicantName} date={request.submittedAt} />
                 </tr>
@@ -116,13 +110,14 @@ export default async function RequestPrintPage({
         <table className="print-table w-full border-collapse">
           <thead>
             <tr>
-              <th className={`${th} w-[7%]`} rowSpan={2}>維持日</th>
-              <th className={`${th} w-[10%]`} rowSpan={2}>品番</th>
-              <th className={`${th} w-[8%]`} rowSpan={2}>納入場所</th>
-              <th className={`${th} w-[16%]`} rowSpan={2}>品名</th>
-              <th className={`${thNew} w-[28%]`} colSpan={4}>新 単 価</th>
-              <th className={`${thOld} w-[21%]`} colSpan={4}>旧 単 価</th>
-              <th className={`${th} w-[10%]`} rowSpan={2}>備考</th>
+              <th className={`${th} w-[6%]`} rowSpan={2}>維持日</th>
+              <th className={`${th} w-[8%]`} rowSpan={2}>品番</th>
+              <th className={`${th} w-[5%]`} rowSpan={2}>納入場所</th>
+              <th className={`${th} w-[12%]`} rowSpan={2}>品名</th>
+              <th className={`${thNew} w-[19%]`} colSpan={4}>新 単 価</th>
+              <th className={`${thOld} w-[11%]`} colSpan={3}>旧 単 価</th>
+              <th className={`${thBd} w-[24%]`} colSpan={6}>単 価 差 の 内 訳</th>
+              <th className={`${th} w-[15%]`} rowSpan={2}>備考（改訂理由）</th>
             </tr>
             <tr>
               <th className={thNew}>適用日</th>
@@ -130,9 +125,14 @@ export default async function RequestPrintPage({
               <th className={thNew}>単価</th>
               <th className={thNew}>買入単価</th>
               <th className={thOld}>取消日</th>
-              <th className={thOld}>支給単価</th>
               <th className={thOld}>単価</th>
               <th className={thOld}>買入単価</th>
+              <th className={thBd}>支給材建値</th>
+              <th className={thBd}>材料建値</th>
+              <th className={thBd}>単価改定</th>
+              <th className={thBd}>設計変更</th>
+              <th className={thBd}>為替変動</th>
+              <th className={thBd}>その他</th>
             </tr>
           </thead>
           <tbody>
@@ -150,10 +150,10 @@ export default async function RequestPrintPage({
                       <div className="text-[10px] text-slate-500">発注先 {l.supplierCd}</div>
                     )}
                   </td>
-                  <td className={`${td} text-center font-mono text-[11px]`}>
+                  <td className={`${td} text-center font-mono text-[9px]`}>
                     {l.locCd ?? l.dlvCd ?? ""}
                   </td>
-                  <td className={`${td} text-[11px]`}>{l.itemName ?? ""}</td>
+                  <td className={`${td} text-[9px] leading-tight`}>{l.itemName ?? ""}</td>
 
                   {/* 新単価 */}
                   <td className={`${tdNew} text-center`}>{formatDate(l.startDate)}</td>
@@ -163,11 +163,18 @@ export default async function RequestPrintPage({
 
                   {/* 旧単価（新規登録品は空欄） */}
                   <td className={`${tdOld} text-center`}>{isNew ? "" : formatDate(dayBefore(l.startDate))}</td>
-                  <td className={`${tdOld} text-right`}>{""}</td>
                   <td className={`${tdOld} text-right`}>{blank(l.currentPrice)}</td>
                   <td className={`${tdOld} text-right`}>{blank(l.currentPrice)}</td>
 
-                  <td className={`${td} text-[10px]`}>
+                  {/* 単価差の内訳（改訂理由別） */}
+                  <td className={`${tdBd} text-right`}>{blank(l.bdSupplyMat)}</td>
+                  <td className={`${tdBd} text-right`}>{blank(l.bdMaterial)}</td>
+                  <td className={`${tdBd} text-right`}>{blank(l.bdRevision)}</td>
+                  <td className={`${tdBd} text-right`}>{blank(l.bdDesign)}</td>
+                  <td className={`${tdBd} text-right`}>{blank(l.bdForex)}</td>
+                  <td className={`${tdBd} text-right`}>{blank(l.bdOther)}</td>
+
+                  <td className={`${td} text-[9px] leading-tight`}>
                     {isNew ? "新規登録" : ""}
                     {l.reasonNote ? (isNew ? " / " : "") + l.reasonNote : ""}
                   </td>
@@ -176,52 +183,6 @@ export default async function RequestPrintPage({
             })}
           </tbody>
         </table>
-
-        {/* 単価差の内訳（改訂理由別） */}
-        {hasBreakdown && (
-          <div className="mt-5">
-            <h2 className="mb-1 text-sm font-bold">単価差の内訳</h2>
-            <table className="print-table w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className={`${th} w-[12%]`}>品番</th>
-                  <th className={`${th} w-[10%]`}>単価差</th>
-                  <th className={th}>支給材建値</th>
-                  <th className={th}>材料建値</th>
-                  <th className={th}>単価改定</th>
-                  <th className={th}>設計変更</th>
-                  <th className={th}>為替変動</th>
-                  <th className={th}>その他</th>
-                  <th className={`${th} w-[22%]`}>備考（改訂理由）</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((l) => {
-                  const diff =
-                    l.currentPrice != null
-                      ? Math.round((l.newPrice - l.currentPrice) * 10000) / 10000
-                      : null;
-                  return (
-                    <tr key={l.id}>
-                      <td className={`${td} font-mono`}>
-                        {l.itemCd}
-                        {l.itemBranch ? `-${l.itemBranch}` : ""}
-                      </td>
-                      <td className={`${td} text-right font-bold`}>{blank(diff)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdSupplyMat)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdMaterial)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdRevision)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdDesign)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdForex)}</td>
-                      <td className={`${td} text-right`}>{blank(l.bdOther)}</td>
-                      <td className={`${td} text-[10px]`}>{l.reasonNote ?? ""}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
 
         <div className="mt-3 text-[10px] text-slate-500">
           ※ 全 {lines.length} 明細。買入単価は購入単価と同額（有償支給がある場合は支給単価を別途記載）。
@@ -234,14 +195,17 @@ export default async function RequestPrintPage({
 /* ===== スタイル・小物 ===== */
 
 const th =
-  "print-keep-bg border border-slate-500 bg-slate-100 px-2 py-1 text-center text-[11px] font-bold text-slate-700";
+  "print-keep-bg border border-slate-500 bg-slate-100 px-1 py-1 text-center text-[9px] font-bold text-slate-700";
 const thNew =
-  "print-keep-bg border border-slate-500 bg-rose-50 px-2 py-1 text-center text-[11px] font-bold text-rose-800";
+  "print-keep-bg border border-slate-500 bg-rose-50 px-1 py-1 text-center text-[9px] font-bold text-rose-800";
 const thOld =
-  "print-keep-bg border border-slate-500 bg-slate-50 px-2 py-1 text-center text-[11px] font-bold text-slate-600";
-const td = "border border-slate-400 px-2 py-1 text-[12px] align-top";
-const tdNew = "border border-slate-400 px-2 py-1 text-[12px] font-mono align-top";
-const tdOld = "border border-slate-400 px-2 py-1 text-[12px] font-mono align-top text-slate-600";
+  "print-keep-bg border border-slate-500 bg-slate-50 px-1 py-1 text-center text-[9px] font-bold text-slate-600";
+const thBd =
+  "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
+const td = "border border-slate-400 px-1.5 py-1 text-[10px] align-top";
+const tdNew = "border border-slate-400 px-1.5 py-1 text-[10px] font-mono align-top";
+const tdOld = "border border-slate-400 px-1.5 py-1 text-[10px] font-mono align-top text-slate-600";
+const tdBd = "border border-slate-400 px-1.5 py-1 text-[10px] font-mono align-top text-amber-900";
 
 /** 未設定は空欄（帳票では 0 と区別する） */
 function blank(v: number | null | undefined): string {

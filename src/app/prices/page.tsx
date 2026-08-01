@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireSession } from "@/lib/session";
+import { requireSession, supplierScopeOf } from "@/lib/session";
 import { listPrices } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
@@ -20,8 +20,10 @@ export default async function PricesPage({
   const activeOnly = sp.active === "1";
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
 
+  const scope = supplierScopeOf(session);
   const { rows, total } = await listPrices(session.companyId, {
     q: q || null,
+    buyerLoginId: scope.buyerLoginId,
     activeOnly,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
@@ -40,7 +42,7 @@ export default async function PricesPage({
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <PageHeader
         title="単価履歴"
-        description={`購買単価の適用履歴（全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
+        description={`購買単価の適用履歴（${scope.restricted ? "担当発注先のみ・" : ""}全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

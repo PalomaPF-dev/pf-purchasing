@@ -58,6 +58,27 @@ export async function requireAdminPage(): Promise<AppSession> {
 }
 
 /**
+ * 担当発注先による表示・登録の制限。
+ * - 管理者（admin）は全発注先を扱える（restricted = false）
+ * - 一般（member）＝バイヤーは、取引先マスタで自分（社員番号）が担当に設定された
+ *   発注先のみ閲覧・申請できる
+ * 社員番号が無いアカウントは、誤って全件見えないよう空の担当として扱う。
+ */
+export interface SupplierScope {
+  /** true = 担当発注先のみに制限する */
+  restricted: boolean;
+  /** 制限中の担当バイヤー社員番号（restricted=false のときは null） */
+  buyerLoginId: string | null;
+}
+
+export function supplierScopeOf(
+  s: Pick<AppSession, "role" | "loginId">
+): SupplierScope {
+  if (s.role === "admin") return { restricted: false, buyerLoginId: null };
+  return { restricted: true, buyerLoginId: s.loginId ?? "" };
+}
+
+/**
  * ログイン中のセッション＋役割を返す。未ログインなら null。
  * リダイレクトしないので、API route 側で 401/403 を返せる。
  * role は DB から都度取得する（既存セッションでも即時反映される）。

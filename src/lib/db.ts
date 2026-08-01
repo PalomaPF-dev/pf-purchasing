@@ -170,6 +170,8 @@ export async function listRequests(
   opts: {
     status?: RequestStatus | "awaiting" | null;
     applicantLoginId?: string | null;
+    /** 指定時、その担当バイヤーの発注先を含む申請のみ返す */
+    buyerLoginId?: string | null;
     q?: string | null;
     limit?: number;
   } = {}
@@ -190,6 +192,11 @@ export async function listRequests(
     WHERE r.company_id = ${companyId}
       AND (${statuses}::text[] IS NULL OR r.status = ANY(${statuses}))
       AND (${opts.applicantLoginId ?? null}::text IS NULL OR r.applicant_login_id = ${opts.applicantLoginId ?? null})
+      AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
+        SELECT 1 FROM price_request_lines l2
+        JOIN suppliers sp ON sp.company_id = l2.company_id AND sp.code = l2.supplier_cd
+        WHERE l2.request_id = r.id AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}
+      ))
       AND (${q}::text IS NULL OR EXISTS (
         SELECT 1 FROM price_request_lines l
         WHERE l.request_id = r.id
@@ -413,8 +420,14 @@ export async function approveRequest(
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
+  const wf = await getWfSettings(companyId);
+  if (!canApproveStage(wf, stage, approver.loginId)) {
+    const label = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
+    throw new Error(`${label}承認の権限がありません（承認者に指定されていません）。`);
+  }
   const from = stage === "mgr" ? "pending" : "mgr_approved";
-  const to = stage === "mgr" ? "mgr_approved" : "approved";
+  // 1段階運用ではMGR承認で完了扱いにする
+  const to = stage === "mgr" ? (wf.stages === 1 ? "approved" : "mgr_approved") : "approved";
   const rows = await sql`
     UPDATE price_requests SET status = ${to}, updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${requestId} AND status = ${from}
@@ -424,7 +437,7 @@ export async function approveRequest(
   await sql`
     INSERT INTO request_approvals (company_id, request_id, stage, action, approver_login_id, approver_name, comment)
     VALUES (${companyId}, ${requestId}, ${stage}, 'approve', ${approver.loginId}, ${approver.name}, ${comment})`;
-  const stageLabel = stage === "mgr" ? "MGR" : "部門長";
+  const stageLabel = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
   await addRequestMessage(
     companyId,
     requestId,
@@ -525,6 +538,76 @@ export async function addRequestMessage(
     VALUES (${companyId}, ${requestId}, ${author.loginId}, ${author.name}, ${body}, ${isSystem})`;
 }
 
+
+// ===== 承認ワークフロー設定 =====
+
+export interface WfSettings {
+  /** 承認段階数（1=MGRのみ / 2=MGR→部門長） */
+  stages: 1 | 2;
+  /** 各段階の承認者（社員番号）。空＝全管理者が承認できる */
+  mgrApprovers: string[];
+  deptApprovers: string[];
+  /** 帳票・画面に表示する承認段階の名称 */
+  mgrLabel: string;
+  deptLabel: string;
+}
+
+const WF_DEFAULT: WfSettings = {
+  stages: 2,
+  mgrApprovers: [],
+  deptApprovers: [],
+  mgrLabel: "MGR",
+  deptLabel: "部門長",
+};
+
+/** 承認ワークフロー設定を取得（未設定なら既定値）。 */
+export async function getWfSettings(companyId: string): Promise<WfSettings> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM wf_settings WHERE company_id = ${companyId} LIMIT 1`;
+  const r = (rows as any[])[0];
+  if (!r) return { ...WF_DEFAULT };
+  return {
+    stages: Number(r.stages) === 1 ? 1 : 2,
+    mgrApprovers: Array.isArray(r.mgr_approvers) ? r.mgr_approvers : [],
+    deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
+    mgrLabel: r.mgr_label || "MGR",
+    deptLabel: r.dept_label || "部門長",
+  };
+}
+
+/** 承認ワークフロー設定を保存（管理者操作）。 */
+export async function saveWfSettings(companyId: string, w: WfSettings): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const clean = (a: string[]) => [...new Set(a.map((x) => x.trim()).filter(Boolean))];
+  await sql`
+    INSERT INTO wf_settings (company_id, stages, mgr_approvers, dept_approvers, mgr_label, dept_label)
+    VALUES (${companyId}, ${w.stages}, ${clean(w.mgrApprovers)}, ${clean(w.deptApprovers)},
+            ${w.mgrLabel.trim() || "MGR"}, ${w.deptLabel.trim() || "部門長"})
+    ON CONFLICT (company_id) DO UPDATE SET
+      stages = EXCLUDED.stages,
+      mgr_approvers = EXCLUDED.mgr_approvers,
+      dept_approvers = EXCLUDED.dept_approvers,
+      mgr_label = EXCLUDED.mgr_label,
+      dept_label = EXCLUDED.dept_label,
+      updated_at = NOW()`;
+}
+
+/**
+ * その段階を承認できるユーザーか。
+ * 承認者リストが空の段階は、全管理者が承認できる（既定の運用）。
+ */
+export function canApproveStage(
+  wf: WfSettings,
+  stage: ApprovalStage,
+  loginId: string | null
+): boolean {
+  const list = stage === "mgr" ? wf.mgrApprovers : wf.deptApprovers;
+  if (list.length === 0) return true;
+  return loginId != null && list.includes(loginId);
+}
+
 // ===== 単価履歴 =====
 
 export async function listPrices(
@@ -532,6 +615,8 @@ export async function listPrices(
   opts: {
     q?: string | null;
     supplierCd?: string | null;
+    /** 指定時、その担当バイヤーの発注先の履歴のみ返す */
+    buyerLoginId?: string | null;
     activeOnly?: boolean;
     limit?: number;
     offset?: number;
@@ -548,6 +633,10 @@ export async function listPrices(
     AND (${q}::text IS NULL OR item_cd ILIKE ${q} OR item_name ILIKE ${q}
          OR supplier_cd ILIKE ${q} OR supplier_name ILIKE ${q})
     AND (${opts.supplierCd ?? null}::text IS NULL OR supplier_cd = ${opts.supplierCd ?? null})
+    AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
+      SELECT 1 FROM suppliers sp
+      WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+        AND sp.buyer_login_id = ${opts.buyerLoginId ?? null}))
     AND (NOT ${activeOnly} OR (start_date <= CURRENT_DATE AND (end_date IS NULL OR end_date >= CURRENT_DATE)))`;
   const [rows, cnt] = await Promise.all([
     sql`
@@ -563,7 +652,8 @@ export async function listPrices(
 export async function priceHistoryFor(
   companyId: string,
   itemCd: string,
-  supplierCd: string | null
+  supplierCd: string | null,
+  buyerLoginId: string | null = null
 ): Promise<PriceHistoryRow[]> {
   await ensureSchema();
   const sql = getSql();
@@ -571,6 +661,10 @@ export async function priceHistoryFor(
     SELECT * FROM price_history
     WHERE company_id = ${companyId} AND item_cd = ${itemCd}
       AND (${supplierCd}::text IS NULL OR supplier_cd = ${supplierCd})
+      AND (${buyerLoginId}::text IS NULL OR EXISTS (
+        SELECT 1 FROM suppliers sp
+        WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+          AND sp.buyer_login_id = ${buyerLoginId}))
     ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'), start_date DESC
     LIMIT 1000`;
   return (rows as any[]).map(mapHistory);
@@ -726,23 +820,27 @@ export async function deleteItem(companyId: string, id: string): Promise<void> {
 
 export async function listSuppliers(
   companyId: string,
-  opts: { q?: string | null; limit?: number; offset?: number } = {}
+  opts: { q?: string | null; buyerLoginId?: string | null; limit?: number; offset?: number } = {}
 ): Promise<{ rows: Supplier[]; total: number }> {
   await ensureSchema();
   const sql = getSql();
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
+  // buyer が指定されたら担当発注先のみ（バイヤー本人の画面）
+  const buyer = opts.buyerLoginId ?? null;
   const [rows, cnt] = await Promise.all([
     sql`
       SELECT * FROM suppliers
       WHERE company_id = ${companyId}
         AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
+        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})
       ORDER BY code LIMIT ${limit} OFFSET ${offset}`,
     sql`
       SELECT COUNT(*)::int AS n FROM suppliers
       WHERE company_id = ${companyId}
-        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})`,
+        AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})
+        AND (${buyer}::text IS NULL OR buyer_login_id = ${buyer})`,
   ]);
   return {
     rows: (rows as any[]).map((r) => ({
@@ -751,6 +849,7 @@ export async function listSuppliers(
       name: r.name,
       notes: r.notes ?? null,
       active: Boolean(r.active),
+      buyerLoginId: r.buyer_login_id ?? null,
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };
@@ -758,18 +857,52 @@ export async function listSuppliers(
 
 export async function upsertSupplier(
   companyId: string,
-  s: { code: string; name: string; notes?: string | null }
+  s: { code: string; name: string; notes?: string | null; buyerLoginId?: string | null }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const buyer = (s.buyerLoginId ?? "").trim() || null;
+  await sql`
+    INSERT INTO suppliers (company_id, code, name, notes, buyer_login_id)
+    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null}, ${buyer})
+    ON CONFLICT (company_id, code) DO UPDATE SET
+      name = EXCLUDED.name,
+      notes = COALESCE(EXCLUDED.notes, suppliers.notes),
+      buyer_login_id = COALESCE(EXCLUDED.buyer_login_id, suppliers.buyer_login_id),
+      active = true,
+      updated_at = NOW()`;
+}
+
+/** 担当バイヤーの割当・解除（管理者操作）。null で未割当に戻す。 */
+export async function setSupplierBuyer(
+  companyId: string,
+  supplierId: string,
+  buyerLoginId: string | null
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   await sql`
-    INSERT INTO suppliers (company_id, code, name, notes)
-    VALUES (${companyId}, ${s.code.trim()}, ${s.name.trim()}, ${s.notes ?? null})
-    ON CONFLICT (company_id, code) DO UPDATE SET
-      name = EXCLUDED.name,
-      notes = COALESCE(EXCLUDED.notes, suppliers.notes),
-      active = true,
-      updated_at = NOW()`;
+    UPDATE suppliers SET buyer_login_id = ${buyerLoginId}, updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${supplierId}`;
+}
+
+/**
+ * 指定の発注先がそのバイヤーの担当かを判定する（サーバー側の権限チェック）。
+ * buyerLoginId が null（管理者）なら常に true。
+ */
+export async function canAccessSupplier(
+  companyId: string,
+  supplierCd: string,
+  buyerLoginId: string | null
+): Promise<boolean> {
+  if (buyerLoginId == null) return true;
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT 1 FROM suppliers
+    WHERE company_id = ${companyId} AND code = ${supplierCd} AND buyer_login_id = ${buyerLoginId}
+    LIMIT 1`;
+  return (rows as any[]).length > 0;
 }
 
 export async function deleteSupplier(companyId: string, id: string): Promise<void> {
@@ -857,6 +990,7 @@ export async function searchSupplierItems(
 export async function searchActiveSuppliers(
   companyId: string,
   q: string,
+  buyerLoginId: string | null = null,
   limit = 20
 ): Promise<{ code: string; name: string; itemCount: number }[]> {
   await ensureSchema();
@@ -869,6 +1003,7 @@ export async function searchActiveSuppliers(
     FROM suppliers s
     WHERE s.company_id = ${companyId} AND s.active
       AND (${pat}::text IS NULL OR s.code ILIKE ${pat} OR s.name ILIKE ${pat})
+      AND (${buyerLoginId}::text IS NULL OR s.buyer_login_id = ${buyerLoginId})
     ORDER BY s.code
     LIMIT ${Math.min(limit, 50)}`;
   return (rows as any[]).map((r) => ({
@@ -893,6 +1028,7 @@ export async function searchSuppliers(companyId: string, q: string, limit = 12):
     name: r.name,
     notes: r.notes ?? null,
     active: Boolean(r.active),
+    buyerLoginId: r.buyer_login_id ?? null,
   }));
 }
 

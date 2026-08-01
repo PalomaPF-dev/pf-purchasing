@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { requireSession } from "@/lib/session";
+import { requireSession, supplierScopeOf } from "@/lib/session";
 import { priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
 import type { PriceHistoryRow } from "@/lib/types";
@@ -53,7 +53,8 @@ export default async function PriceHistoryPage({
   const sp = await searchParams;
   const supplier = sp.supplier || null;
 
-  const rows = await priceHistoryFor(session.companyId, itemCd, supplier);
+  const scope = supplierScopeOf(session);
+  const rows = await priceHistoryFor(session.companyId, itemCd, supplier, scope.buyerLoginId);
   const itemName = rows.find((r) => r.itemName)?.itemName ?? "";
 
   // 申請由来の行の申請ID（リンク用）を取得

@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireSession, requireAdminSession } from "./session";
+import { requireSession, requireAdminSession, supplierScopeOf } from "./session";
 import {
   addRequestMessage,
   approveRequest,
   backfillHistoryNames,
+  canAccessSupplier,
   createRequest,
   deleteItem,
   deleteRequest,
@@ -14,10 +15,31 @@ import {
   rejectRequest,
   submitRequest,
   updateDraftRequest,
+  saveWfSettings,
+  setSupplierBuyer,
   upsertItem,
   upsertSupplier,
 } from "./db";
+import type { WfSettings } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
+
+/**
+ * 明細の発注先がログイン中ユーザーの担当かをサーバー側で検証する。
+ * 一般（バイヤー）は担当外の発注先に申請できない（UIでも選べないが必ず防ぐ）。
+ */
+async function assertSupplierAllowed(
+  s: { companyId: string; role: "admin" | "member"; loginId: string | null },
+  lines: LineInput[]
+): Promise<void> {
+  const scope = supplierScopeOf(s);
+  if (!scope.restricted) return;
+  const codes = [...new Set(lines.map((l) => (l.supplierCd ?? "").trim()).filter(Boolean))];
+  for (const code of codes) {
+    if (!(await canAccessSupplier(s.companyId, code, scope.buyerLoginId))) {
+      throw new Error(`発注先 ${code} はあなたの担当ではありません。担当の発注先のみ申請できます。`);
+    }
+  }
+}
 
 /* ===== 申請 ===== */
 
@@ -28,6 +50,7 @@ export async function createRequestAction(payload: {
   submit: boolean;
 }): Promise<{ id: string }> {
   const s = await requireSession();
+  await assertSupplierAllowed(s, payload.lines);
   const id = await createRequest(
     s.companyId,
     { title: payload.title, lines: payload.lines },
@@ -48,6 +71,7 @@ export async function updateRequestAction(payload: {
   submit: boolean;
 }): Promise<void> {
   const s = await requireSession();
+  await assertSupplierAllowed(s, payload.lines);
   await updateDraftRequest(s.companyId, payload.requestId, {
     title: payload.title,
     lines: payload.lines,
@@ -110,6 +134,87 @@ export async function rejectRequestAction(
   revalidatePath(`/requests/${requestId}`);
 }
 
+/**
+ * 一括承認（管理者のみ）。選択した申請をまとめて承認する。
+ * 1件ごとに処理し、失敗した申請は理由つきで返す（成功分はそのまま確定）。
+ */
+export async function approveManyAction(
+  requestIds: string[],
+  stage: ApprovalStage,
+  comment: string
+): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
+  const s = await requireAdminSession();
+  const failed: { id: string; message: string }[] = [];
+  let ok = 0;
+  for (const id of requestIds) {
+    try {
+      await approveRequest(
+        s.companyId,
+        id,
+        stage,
+        { loginId: s.loginId, name: s.userName },
+        comment.trim() || null
+      );
+      ok++;
+    } catch (e) {
+      failed.push({ id, message: e instanceof Error ? e.message : "承認に失敗しました" });
+    }
+  }
+  revalidatePath("/approvals");
+  revalidatePath("/requests");
+  revalidatePath("/prices");
+  return { ok, failed };
+}
+
+/** 一括差し戻し（管理者のみ）。理由は必須。 */
+export async function rejectManyAction(
+  requestIds: string[],
+  stage: ApprovalStage,
+  comment: string
+): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
+  const s = await requireAdminSession();
+  if (!comment.trim()) throw new Error("差し戻しの理由を入力してください。");
+  const failed: { id: string; message: string }[] = [];
+  let ok = 0;
+  for (const id of requestIds) {
+    try {
+      await rejectRequest(s.companyId, id, stage, { loginId: s.loginId, name: s.userName }, comment.trim());
+      ok++;
+    } catch (e) {
+      failed.push({ id, message: e instanceof Error ? e.message : "差し戻しに失敗しました" });
+    }
+  }
+  revalidatePath("/approvals");
+  revalidatePath("/requests");
+  return { ok, failed };
+}
+
+/** 承認ワークフロー設定の保存（管理者のみ） */
+export async function saveWfSettingsAction(payload: {
+  stages: 1 | 2;
+  mgrApprovers: string;
+  deptApprovers: string;
+  mgrLabel: string;
+  deptLabel: string;
+}): Promise<void> {
+  const s = await requireAdminSession();
+  const toList = (v: string) =>
+    v
+      .split(/[\s,、，]+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const wf: WfSettings = {
+    stages: payload.stages === 1 ? 1 : 2,
+    mgrApprovers: toList(payload.mgrApprovers),
+    deptApprovers: toList(payload.deptApprovers),
+    mgrLabel: payload.mgrLabel,
+    deptLabel: payload.deptLabel,
+  };
+  await saveWfSettings(s.companyId, wf);
+  revalidatePath("/settings");
+  revalidatePath("/approvals");
+}
+
 /** 承認スレッドへのコメント投稿 */
 export async function addMessageAction(requestId: string, body: string): Promise<void> {
   const s = await requireSession();
@@ -152,7 +257,15 @@ export async function upsertSupplierAction(formData: FormData): Promise<void> {
     code,
     name,
     notes: String(formData.get("notes") ?? "").trim() || null,
+    buyerLoginId: String(formData.get("buyerLoginId") ?? "").trim() || null,
   });
+  revalidatePath("/suppliers");
+}
+
+/** 担当バイヤーの割当・解除（管理者のみ）。空文字で未割当に戻す。 */
+export async function setSupplierBuyerAction(id: string, buyerLoginId: string): Promise<void> {
+  const s = await requireAdminSession();
+  await setSupplierBuyer(s.companyId, id, buyerLoginId.trim() || null);
   revalidatePath("/suppliers");
 }
 

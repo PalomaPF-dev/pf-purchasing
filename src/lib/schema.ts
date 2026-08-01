@@ -63,6 +63,10 @@ async function buildSchema(): Promise<void> {
       UNIQUE (company_id, code)
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_company_idx ON suppliers(company_id)`);
+  // 担当バイヤー（社員番号 = users.login_id）。一般ユーザーは自分の担当発注先のみ
+  // 閲覧・申請できる。NULL = 未割当（管理者のみが扱える）。
+  await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS buyer_login_id TEXT`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_buyer_idx ON suppliers(company_id, buyer_login_id)`);
 
   // 品番（品目）マスタ。branch は mcframe の枝番1（既定 '*'＝枝番なし）
   await safeDdl(() => sql`
@@ -212,6 +216,19 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_item_idx ON price_history(company_id, item_cd, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_supplier_idx ON price_history(company_id, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_start_idx ON price_history(company_id, start_date DESC)`);
+
+  // 承認ワークフローの設定（管理者が画面から変更する）。会社ごとに1行。
+  // stages: 1=MGRのみ / 2=MGR→部門長。approvers が空配列なら全管理者が承認できる。
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS wf_settings (
+      company_id     UUID PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+      stages         INTEGER NOT NULL DEFAULT 2,
+      mgr_approvers  TEXT[] NOT NULL DEFAULT '{}',
+      dept_approvers TEXT[] NOT NULL DEFAULT '{}',
+      mgr_label      TEXT NOT NULL DEFAULT 'MGR',
+      dept_label     TEXT NOT NULL DEFAULT '部門長',
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
 
   // パスワード設定（招待）トークン
   await safeDdl(() => sql`
