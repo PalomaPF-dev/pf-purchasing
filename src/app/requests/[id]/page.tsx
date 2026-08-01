@@ -8,6 +8,7 @@ import {
   getRequest,
   getWfSettings,
   listEmployees,
+  itemNameMap,
   listRequestFiles,
   NO_ASSIGNED,
   stageLabelOf,
@@ -91,6 +92,8 @@ export default async function RequestDetailPage({
   const withdrawable =
     submitted && (isAdmin || (!!request.applicantLoginId && request.applicantLoginId === session.loginId));
   const exportedCount = lines.filter((l) => l.exportedAt).length;
+  // 申請時に品名が入っていない明細は、品番マスタから補って表示する
+  const names = await itemNameMap(session.companyId, lines.map((l) => l.itemCd));
   // 単価改訂の影響額（月当たり）。数量が入っている明細だけを合計する
   const totalQty = sumOf(lines, (l) => l.monthlyQty);
   const totalAmount = sumOf(lines, monthlyAmount);
@@ -268,7 +271,9 @@ export default async function RequestDetailPage({
                   <td className="px-3 py-2.5 text-xs text-[#707070]">{l.seq}</td>
                   <td className="px-2 py-2.5">
                     <div className="font-mono">{l.itemCd}{l.itemBranch ? `-${l.itemBranch}` : ""}</div>
-                    <div className="text-xs text-[#707070]">{l.itemName ?? ""}</div>
+                    <div className="text-xs text-[#707070]">
+                      {l.itemName || names.get(l.itemCd) || ""}
+                    </div>
                   </td>
                   <td className="px-2 py-2.5">
                     <span className="font-mono">{l.supplierCd}</span>
