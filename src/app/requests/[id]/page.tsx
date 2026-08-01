@@ -42,7 +42,7 @@ export default async function RequestDetailPage({
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <Link
         href="/requests"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#2563eb] hover:underline"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#e11d48] hover:underline"
       >
         <ArrowLeft className="h-4 w-4" />
         申請一覧に戻る
@@ -67,7 +67,7 @@ export default async function RequestDetailPage({
             )}
             <Link
               href={`/requests/${request.id}/print`}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-[#2563eb] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#1d4fd8]"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#e11d48] px-3 py-1.5 text-sm font-medium text-white hover:bg-[#be123c]"
             >
               <Printer className="h-4 w-4" />
               承認用紙（PDF）
@@ -180,7 +180,7 @@ export default async function RequestDetailPage({
               <li
                 key={m.id}
                 className={`rounded-lg px-3 py-2 text-sm ${
-                  m.isSystem ? "bg-[#f8fafc] text-[#707070]" : "bg-[#eef4ff]"
+                  m.isSystem ? "bg-[#f8fafc] text-[#707070]" : "bg-[#fff1f2]"
                 }`}
               >
                 <div className="mb-0.5 text-xs text-[#9a9a9a]">

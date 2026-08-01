@@ -27,7 +27,7 @@ export default async function ExportPage({
             href={includeExported ? "/export" : "/export?all=1"}
             className={`rounded-full px-3 py-1.5 text-xs font-medium ${
               includeExported
-                ? "bg-[#2563eb] text-white"
+                ? "bg-[#e11d48] text-white"
                 : "border border-[#e5e5e5] bg-white text-[#555555] hover:bg-[#f7f7f5]"
             }`}
           >

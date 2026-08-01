@@ -35,7 +35,7 @@ export default async function ItemsPage({
         actions={
           <Link
             href="/import?tab=items"
-            className="inline-flex items-center gap-2 rounded-lg border border-[#2563eb] px-4 py-2 text-sm font-semibold text-[#2563eb] hover:bg-[#eef4ff]"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
           >
             <Upload className="h-4 w-4" />
             Excel/CSVで一括取込
@@ -69,7 +69,7 @@ export default async function ItemsPage({
           <input name="taxCd" placeholder="P0010" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm" />
         </div>
         <div className="flex items-end">
-          <button className="w-full rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8]">
+          <button className="w-full rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]">
             登録 / 更新
           </button>
         </div>
@@ -81,7 +81,7 @@ export default async function ItemsPage({
           name="q"
           defaultValue={q}
           placeholder="品目CD・品名で検索"
-          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#2563eb] focus:outline-none"
+          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
         />
       </form>
 
@@ -101,7 +101,7 @@ export default async function ItemsPage({
             {rows.map((it) => (
               <tr key={it.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
                 <td className="px-4 py-2 font-mono">
-                  <Link href={`/prices/${encodeURIComponent(it.code)}`} className="text-[#2563eb] hover:underline">
+                  <Link href={`/prices/${encodeURIComponent(it.code)}`} className="text-[#e11d48] hover:underline">
                     {it.code}
                   </Link>
                 </td>

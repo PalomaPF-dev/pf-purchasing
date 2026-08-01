@@ -79,7 +79,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
         <button
           onClick={() => void download()}
           disabled={busy || selected.size === 0}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           選択した {selected.size} 件をCSV出力
@@ -89,7 +89,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
             type="checkbox"
             checked={mark}
             onChange={(e) => setMark(e.target.checked)}
-            className="h-4 w-4 accent-[#2563eb]"
+            className="h-4 w-4 accent-[#e11d48]"
           />
           出力済みとして記録する
         </label>
@@ -112,7 +112,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
                   onChange={() =>
                     setSelected(allChecked ? new Set() : new Set(rows.map((r) => r.id)))
                   }
-                  className="h-4 w-4 accent-[#2563eb]"
+                  className="h-4 w-4 accent-[#e11d48]"
                 />
               </th>
               <th className="px-2 py-2.5 font-medium">申請No</th>
@@ -136,7 +136,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
                     type="checkbox"
                     checked={selected.has(r.id)}
                     onChange={() => toggle(r.id)}
-                    className="h-4 w-4 accent-[#2563eb]"
+                    className="h-4 w-4 accent-[#e11d48]"
                   />
                 </td>
                 <td className="px-2 py-2 font-mono">#{r.reqNo}</td>
@@ -159,7 +159,7 @@ export default function ExportForm({ rows }: { rows: ExportRow[] }) {
                       出力済 {fmtDate(r.exportedAt)}
                     </span>
                   ) : (
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                    <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-medium text-rose-700">
                       未出力
                     </span>
                   )}

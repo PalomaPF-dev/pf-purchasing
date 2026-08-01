@@ -51,7 +51,7 @@ export default async function PriceHistoryPage({
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
       <Link
         href="/prices"
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#2563eb] hover:underline"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#e11d48] hover:underline"
       >
         <ArrowLeft className="h-4 w-4" />
         単価履歴に戻る
@@ -104,7 +104,7 @@ export default async function PriceHistoryPage({
                             <td className="px-4 py-2">
                               {formatDate(r.startDate)}
                               {i === 0 && (
-                                <span className="ml-2 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                                <span className="ml-2 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-700">
                                   最新
                                 </span>
                               )}
@@ -126,7 +126,7 @@ export default async function PriceHistoryPage({
                             <td className="px-2 py-2 text-xs">{r.reason ?? "—"}</td>
                             <td className="px-2 py-2 text-xs">
                               {reqId ? (
-                                <Link href={`/requests/${reqId}`} className="text-[#2563eb] hover:underline">
+                                <Link href={`/requests/${reqId}`} className="text-[#e11d48] hover:underline">
                                   申請を見る
                                 </Link>
                               ) : r.source === "migration" ? (

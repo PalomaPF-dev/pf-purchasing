@@ -32,7 +32,7 @@ const NAV: NavItem[] = [
 ];
 
 /** 購買単価アプリのテーマ（ブルー、アクティブは角丸＋丸バー）。 */
-const ACCENT = "#2563eb";
+const ACCENT = "#e11d48";
 
 /** ログインユーザー表示とログアウト。next-auth 依存のためアプリ側に置く。 */
 function UserFooter() {

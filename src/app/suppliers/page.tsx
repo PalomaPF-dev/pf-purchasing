@@ -35,7 +35,7 @@ export default async function SuppliersPage({
         actions={
           <Link
             href="/import?tab=suppliers"
-            className="inline-flex items-center gap-2 rounded-lg border border-[#2563eb] px-4 py-2 text-sm font-semibold text-[#2563eb] hover:bg-[#eef4ff]"
+            className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
           >
             <Upload className="h-4 w-4" />
             Excel/CSVで一括取込
@@ -56,7 +56,7 @@ export default async function SuppliersPage({
           <input name="name" required className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm" />
         </div>
         <div className="flex items-end">
-          <button className="w-full rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8]">
+          <button className="w-full rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]">
             登録 / 更新
           </button>
         </div>
@@ -67,7 +67,7 @@ export default async function SuppliersPage({
           name="q"
           defaultValue={q}
           placeholder="発注先CD・発注先名で検索"
-          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#2563eb] focus:outline-none"
+          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
         />
       </form>
 

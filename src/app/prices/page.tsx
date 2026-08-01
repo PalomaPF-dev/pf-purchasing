@@ -50,9 +50,9 @@ export default async function PricesPage({
             name="q"
             defaultValue={q}
             placeholder="品目CD・品名・発注先CD・発注先名で検索"
-            className="w-80 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#2563eb] focus:outline-none"
+            className="w-80 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
           />
-          <button className="rounded-lg bg-[#2563eb] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#1d4fd8]">
+          <button className="rounded-lg bg-[#e11d48] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#be123c]">
             検索
           </button>
         </form>
@@ -60,7 +60,7 @@ export default async function PricesPage({
           href={`/prices${qs({ active: activeOnly ? "" : "1" })}`}
           className={`rounded-full px-3 py-1.5 text-xs font-medium ${
             activeOnly
-              ? "bg-[#2563eb] text-white"
+              ? "bg-[#e11d48] text-white"
               : "border border-[#e5e5e5] bg-white text-[#555555] hover:bg-[#f7f7f5]"
           }`}
         >
@@ -72,7 +72,7 @@ export default async function PricesPage({
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-sm text-[#707070]">
           該当する単価データがありません。
           <div className="mt-2">
-            現行データの取り込みは <Link href="/migrate" className="text-[#2563eb] hover:underline">データ移行</Link> から行えます。
+            現行データの取り込みは <Link href="/migrate" className="text-[#e11d48] hover:underline">データ移行</Link> から行えます。
           </div>
         </div>
       ) : (
@@ -96,7 +96,7 @@ export default async function PricesPage({
                   <td className="px-4 py-2 font-mono">
                     <Link
                       href={`/prices/${encodeURIComponent(p.itemCd)}?supplier=${encodeURIComponent(p.supplierCd)}`}
-                      className="text-[#2563eb] hover:underline"
+                      className="text-[#e11d48] hover:underline"
                     >
                       {p.itemCd}
                       {p.itemBranch && p.itemBranch !== "*" ? `-${p.itemBranch}` : ""}
@@ -114,7 +114,7 @@ export default async function PricesPage({
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
                         p.source === "approval"
-                          ? "bg-blue-50 text-blue-700"
+                          ? "bg-rose-50 text-rose-700"
                           : "bg-slate-100 text-slate-500"
                       }`}
                     >

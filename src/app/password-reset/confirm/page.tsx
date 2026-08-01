@@ -52,7 +52,7 @@ function ConfirmInner() {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#f7f7f5]">
-      <div className="h-1 shrink-0 bg-[#2563eb]" />
+      <div className="h-1 shrink-0 bg-[#e11d48]" />
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-[#e5e5e5] bg-white px-8 py-8">
           <h1 className="mb-1 text-lg font-bold text-[#333333]">パスワードの設定</h1>
@@ -74,7 +74,7 @@ function ConfirmInner() {
                   minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-[#d5d5d5] px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                  className="w-full rounded-lg border border-[#d5d5d5] px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
                 />
               </div>
               <div>
@@ -85,7 +85,7 @@ function ConfirmInner() {
                   minLength={8}
                   value={password2}
                   onChange={(e) => setPassword2(e.target.value)}
-                  className="w-full rounded-lg border border-[#d5d5d5] px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none focus:ring-1 focus:ring-[#2563eb]"
+                  className="w-full rounded-lg border border-[#d5d5d5] px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
                 />
               </div>
               {error && (
@@ -96,7 +96,7 @@ function ConfirmInner() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full rounded-lg bg-[#2563eb] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+                className="w-full rounded-lg bg-[#e11d48] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
               >
                 {loading ? "設定中…" : "パスワードを設定する"}
               </button>

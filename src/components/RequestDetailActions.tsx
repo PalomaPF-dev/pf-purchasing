@@ -22,7 +22,7 @@ export function SubmitDeleteActions({ requestId }: { requestId: string }) {
             .finally(() => setBusy(false));
         }}
         disabled={busy}
-        className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+        className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
       >
         <Send className="h-4 w-4" />
         申請を提出（承認へ回す）
@@ -71,12 +71,12 @@ export function MessageForm({ requestId }: { requestId: string }) {
         value={body}
         onChange={(e) => setBody(e.target.value)}
         placeholder="コメントを入力（申請者・承認者に共有されます）"
-        className="flex-1 rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#2563eb] focus:outline-none"
+        className="flex-1 rounded-lg border border-[#d5d5d5] bg-white px-3 py-2 text-sm focus:border-[#e11d48] focus:outline-none"
       />
       <button
         type="submit"
         disabled={busy || !body.trim()}
-        className="rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+        className="rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
       >
         送信
       </button>

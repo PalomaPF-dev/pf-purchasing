@@ -199,7 +199,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
             const f = e.target.files?.[0];
             if (f) void run(f);
           }}
-          className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#eef4ff] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2563eb] hover:file:bg-[#dbe8ff]"
+          className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff1f2] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#e11d48] hover:file:bg-[#dbe8ff]"
         />
 
         {busy && !progress && (
@@ -218,7 +218,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
               <span>{pct}%</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-[#eeeeee]">
-              <div className="h-full bg-[#2563eb] transition-all" style={{ width: `${pct}%` }} />
+              <div className="h-full bg-[#e11d48] transition-all" style={{ width: `${pct}%` }} />
             </div>
             <div className="mt-2 text-xs text-[#707070]">
               登録 {progress.inserted.toLocaleString()} 件 / 既存スキップ {progress.skipped.toLocaleString()} 件
@@ -258,7 +258,7 @@ export default function MigrateForm({ historyCount }: { historyCount: number }) 
               })
               .catch((e) => setBackfillMsg(e instanceof Error ? e.message : "補完に失敗しました"));
           }}
-          className="inline-flex items-center gap-2 rounded-lg border border-[#2563eb] px-4 py-2 text-sm font-semibold text-[#2563eb] hover:bg-[#eef4ff] disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2] disabled:opacity-50"
         >
           <Wand2 className="h-4 w-4" />
           マスタから名称を補完する

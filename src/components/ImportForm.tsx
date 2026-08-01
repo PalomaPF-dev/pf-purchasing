@@ -79,7 +79,7 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
             }}
             className={`rounded-full px-4 py-1.5 text-sm font-medium ${
               kind === k
-                ? "bg-[#2563eb] text-white"
+                ? "bg-[#e11d48] text-white"
                 : "border border-[#e5e5e5] bg-white text-[#555555] hover:bg-[#f7f7f5]"
             }`}
           >
@@ -93,7 +93,7 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
 
         <a
           href={`/api/import-excel?template=${kind}`}
-          className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-[#2563eb] hover:underline"
+          className="mb-4 inline-flex items-center gap-2 text-sm font-medium text-[#e11d48] hover:underline"
         >
           <Download className="h-4 w-4" />
           取込テンプレート（CSV）をダウンロード
@@ -104,7 +104,7 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
             type="file"
             accept=".xlsx,.csv,.tsv,.txt"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#eef4ff] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#2563eb] hover:file:bg-[#dbe8ff]"
+            className="block w-full max-w-md text-sm text-[#555555] file:mr-3 file:rounded-lg file:border-0 file:bg-[#fff1f2] file:px-4 file:py-2 file:text-sm file:font-semibold file:text-[#e11d48] hover:file:bg-[#dbe8ff]"
           />
           <p className="mt-1 text-xs text-[#a0a0a0]">Excel (.xlsx) または CSV。1行目はヘッダ。最大4MB。</p>
         </div>
@@ -123,7 +123,7 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
         <button
           onClick={() => void run()}
           disabled={busy || !file}
-          className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#1d4fd8] disabled:opacity-50"
+          className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
           {busy ? "取込中…" : "取込を実行"}

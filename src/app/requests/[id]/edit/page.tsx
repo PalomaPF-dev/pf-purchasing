@@ -27,7 +27,7 @@ export default async function EditRequestPage({
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
       <Link
         href={`/requests/${id}`}
-        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#2563eb] hover:underline"
+        className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#e11d48] hover:underline"
       >
         <ArrowLeft className="h-4 w-4" />
         申請詳細に戻る

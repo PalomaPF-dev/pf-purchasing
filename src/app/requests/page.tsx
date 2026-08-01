@@ -50,7 +50,7 @@ export default async function RequestsPage({
         actions={
           <Link
             href="/requests/new"
-            className="inline-flex items-center gap-2 rounded-lg bg-[#2563eb] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1d4fd8]"
+            className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]"
           >
             <Plus className="h-4 w-4" />
             新規申請
@@ -66,7 +66,7 @@ export default async function RequestsPage({
             href={`/requests${qsOf({ status: t.key })}`}
             className={`rounded-full px-3 py-1.5 text-xs font-medium ${
               status === t.key
-                ? "bg-[#2563eb] text-white"
+                ? "bg-[#e11d48] text-white"
                 : "border border-[#e5e5e5] bg-white text-[#555555] hover:bg-[#f7f7f5]"
             }`}
           >
@@ -77,7 +77,7 @@ export default async function RequestsPage({
           href={`/requests${qsOf({ mine: mine ? "" : "1" })}`}
           className={`rounded-full px-3 py-1.5 text-xs font-medium ${
             mine
-              ? "bg-[#2563eb] text-white"
+              ? "bg-[#e11d48] text-white"
               : "border border-[#e5e5e5] bg-white text-[#555555] hover:bg-[#f7f7f5]"
           }`}
         >
@@ -90,7 +90,7 @@ export default async function RequestsPage({
             name="q"
             defaultValue={q}
             placeholder="品目CD・品名・発注先で検索"
-            className="w-64 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#2563eb] focus:outline-none"
+            className="w-64 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
           />
         </form>
       </div>
@@ -116,7 +116,7 @@ export default async function RequestsPage({
               {requests.map((r) => (
                 <tr key={r.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
                   <td className="px-4 py-2.5 font-mono">
-                    <Link href={`/requests/${r.id}`} className="font-semibold text-[#2563eb] hover:underline">
+                    <Link href={`/requests/${r.id}`} className="font-semibold text-[#e11d48] hover:underline">
                       {r.reqNo != null ? `#${r.reqNo}` : "（下書き）"}
                     </Link>
                   </td>
