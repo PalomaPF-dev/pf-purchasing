@@ -67,6 +67,33 @@ async function buildSchema(): Promise<void> {
   // 閲覧・申請できる。NULL = 未割当（管理者のみが扱える）。
   await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS buyer_login_id TEXT`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_buyer_idx ON suppliers(company_id, buyer_login_id)`);
+  // 担当窓口（取引先CDと窓口一覧より）。
+  // buyer_login_id = 企画グループ担当（バイヤー）、buyer_sub_login_id = 併記された副担当、
+  // chaser_login_id = 管理グループ担当（チェイサー）。
+  // 単価マスタ登録はチェイサーが入力しバイヤーが承認する運用のため、
+  // この3者はいずれもその取引先を扱える。
+  await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS buyer_sub_login_id TEXT`);
+  await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS chaser_login_id TEXT`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_chaser_idx ON suppliers(company_id, chaser_login_id)`);
+
+  // 社員マスタ（社員一覧）。アプリのユーザー登録の元になる。
+  // wf_role: 'mgr' | 'dept' | null（承認W/Fの段階）。role: 'admin' | 'member'
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS employees (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      login_id   TEXT NOT NULL,
+      name       TEXT NOT NULL DEFAULT '',
+      wf_role    TEXT,
+      role       TEXT NOT NULL DEFAULT 'member',
+      email      TEXT,
+      active     BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (company_id, login_id)
+    )`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS employees_company_idx ON employees(company_id)`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS employees_name_idx ON employees(company_id, name)`);
 
   // 品番（品目）マスタ。branch は mcframe の枝番1（既定 '*'＝枝番なし）
   await safeDdl(() => sql`
@@ -216,6 +243,25 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_item_idx ON price_history(company_id, item_cd, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_supplier_idx ON price_history(company_id, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_start_idx ON price_history(company_id, start_date DESC)`);
+
+  // 申請の添付資料（見積書・稟議資料など）。承認後は単価履歴からも参照できる。
+  // ファイル本体は Postgres に保持する（Blobストレージの追加設定なしで運用するため）。
+  // 1ファイル4MBまで（Vercel のリクエストボディ上限に合わせる）。
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS request_files (
+      id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id   UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      request_id   UUID NOT NULL REFERENCES price_requests(id) ON DELETE CASCADE,
+      file_name    TEXT NOT NULL,
+      content_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+      size_bytes   INTEGER NOT NULL DEFAULT 0,
+      kind         TEXT NOT NULL DEFAULT 'quote',
+      data         BYTEA NOT NULL,
+      uploaded_by  TEXT,
+      uploaded_name TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS request_files_request_idx ON request_files(request_id, created_at)`);
 
   // 承認ワークフローの設定（管理者が画面から変更する）。会社ごとに1行。
   // stages: 1=MGRのみ / 2=MGR→部門長。approvers が空配列なら全管理者が承認できる。

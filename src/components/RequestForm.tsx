@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   FileSpreadsheet,
   Keyboard,
+  Paperclip,
   Plus,
   Search,
   SlidersHorizontal,
@@ -202,6 +203,8 @@ export default function RequestForm({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState<"none" | "draft" | "submit">("none");
+  /** 保存時にまとめてアップロードする添付資料 */
+  const [attachments, setAttachments] = useState<File[]>([]);
   // 入力方法のタブ（手入力／見積書から取り込み／Excel・CSVで一括入力）
   const [tab, setTab] = useState<Tab>("manual");
   // 単価差の内訳を展開している明細行
@@ -319,6 +322,7 @@ export default function RequestForm({
     }
     setSaving(submit ? "submit" : "draft");
     try {
+      let id = requestId;
       if (requestId) {
         await updateRequestAction({
           requestId,
@@ -326,15 +330,31 @@ export default function RequestForm({
           lines: toPayload(payloadLines),
           submit,
         });
-        router.push(`/requests/${requestId}`);
       } else {
-        const { id } = await createRequestAction({
-          title: title.trim() || null,
-          lines: toPayload(payloadLines),
-          submit,
-        });
-        router.push(`/requests/${id}`);
+        id = (
+          await createRequestAction({
+            title: title.trim() || null,
+            lines: toPayload(payloadLines),
+            submit,
+          })
+        ).id;
       }
+      // 添付資料は申請の保存後にまとめて送る（失敗しても申請自体は保存済み）
+      if (id && attachments.length > 0) {
+        const fd = new FormData();
+        fd.set("requestId", id);
+        for (const f of attachments) fd.append("file", f);
+        const res = await fetch("/api/request-files", { method: "POST", body: fd });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setError(
+            `申請は保存しましたが、添付に失敗しました: ${data.error ?? "不明なエラー"}（申請詳細から添付し直せます）`
+          );
+        } else {
+          setAttachments([]);
+        }
+      }
+      router.push(`/requests/${id}`);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存に失敗しました。");
@@ -722,6 +742,54 @@ export default function RequestForm({
           </button>
         </>
       )}
+
+      {/* 添付資料（見積書・仕様書など）。保存時にまとめてアップロードする */}
+      <section className="rounded-xl border border-[#e5e5e5] bg-white p-4">
+        <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-[#333333]">
+          <Paperclip className="h-4 w-4 text-[#707070]" />
+          添付資料
+          <span className="font-normal text-[#a0a0a0]">（見積書・仕様書など・任意）</span>
+        </h2>
+        {attachments.length > 0 && (
+          <ul className="mb-2 divide-y divide-[#f5f5f5]">
+            {attachments.map((f, i) => (
+              <li key={`${f.name}-${i}`} className="flex items-center gap-2 py-1.5 text-sm">
+                <span className="truncate">{f.name}</span>
+                <span className="shrink-0 text-xs text-[#a0a0a0]">
+                  {f.size >= 1024 * 1024
+                    ? `${(f.size / 1024 / 1024).toFixed(1)} MB`
+                    : `${Math.round(f.size / 1024)} KB`}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                  className="ml-auto shrink-0 rounded p-1 text-red-500 hover:bg-red-50"
+                  title="外す"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-[#c5c5c5] px-4 py-2 text-sm text-[#555555] hover:border-[#e11d48] hover:text-[#e11d48]">
+          <Paperclip className="h-4 w-4" />
+          ファイルを選ぶ
+          <input
+            type="file"
+            multiple
+            onChange={(e) => {
+              const picked = Array.from(e.target.files ?? []);
+              setAttachments((prev) => [...prev, ...picked]);
+              e.target.value = "";
+            }}
+            className="hidden"
+          />
+        </label>
+        <p className="mt-1.5 text-[10px] text-[#a0a0a0]">
+          保存・提出と同時にアップロードします（1ファイル4MBまで）。承認後は単価履歴からも閲覧できます。
+        </p>
+      </section>
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

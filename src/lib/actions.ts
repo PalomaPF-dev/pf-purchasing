@@ -6,6 +6,9 @@ import { requireSession, requireAdminSession, supplierScopeOf } from "./session"
 import {
   addRequestMessage,
   approveRequest,
+  cancelApproval,
+  getRequest,
+  withdrawRequest,
   backfillHistoryNames,
   canAccessSupplier,
   createRequest,
@@ -16,9 +19,12 @@ import {
   submitRequest,
   updateDraftRequest,
   saveWfSettings,
-  setSupplierBuyer,
+  setSupplierContactIds,
   upsertItem,
   upsertSupplier,
+  upsertEmployee,
+  deleteEmployee,
+  syncUsersFromEmployees,
 } from "./db";
 import type { WfSettings } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
@@ -88,6 +94,45 @@ export async function submitRequestAction(requestId: string): Promise<void> {
   await submitRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName });
   revalidatePath("/requests");
   revalidatePath(`/requests/${requestId}`);
+}
+
+/**
+ * 申請の取り下げ（承認待ち → 下書き）。申請者本人と管理者のみ。
+ * 下書きに戻るので、そのまま修正して再提出、または削除できる。
+ */
+export async function withdrawRequestAction(requestId: string, reason: string): Promise<void> {
+  const s = await requireSession();
+  const detail = await getRequest(s.companyId, requestId);
+  if (!detail) throw new Error("申請が見つかりません。");
+  const mine = detail.request.applicantLoginId && detail.request.applicantLoginId === s.loginId;
+  if (!mine && s.role !== "admin") {
+    throw new Error("取り下げは申請者本人または管理者のみ実行できます。");
+  }
+  await withdrawRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, reason.trim() || null);
+  revalidatePath("/requests");
+  revalidatePath(`/requests/${requestId}`);
+  revalidatePath("/approvals");
+}
+
+/**
+ * 承認の取り消し（管理者のみ）。単価履歴への反映を元に戻して下書きに戻す。
+ * MC取込CSV出力済みの場合は force=true が必要。
+ */
+export async function cancelApprovalAction(
+  requestId: string,
+  reason: string,
+  force: boolean
+): Promise<{ removed: number; restored: number }> {
+  const s = await requireAdminSession();
+  const r = await cancelApproval(s.companyId, requestId, { loginId: s.loginId, name: s.userName }, {
+    reason: reason.trim() || null,
+    force,
+  });
+  revalidatePath("/requests");
+  revalidatePath(`/requests/${requestId}`);
+  revalidatePath("/prices");
+  revalidatePath("/export");
+  return r;
 }
 
 export async function deleteRequestAction(requestId: string): Promise<void> {
@@ -262,13 +307,6 @@ export async function upsertSupplierAction(formData: FormData): Promise<void> {
   revalidatePath("/suppliers");
 }
 
-/** 担当バイヤーの割当・解除（管理者のみ）。空文字で未割当に戻す。 */
-export async function setSupplierBuyerAction(id: string, buyerLoginId: string): Promise<void> {
-  const s = await requireAdminSession();
-  await setSupplierBuyer(s.companyId, id, buyerLoginId.trim() || null);
-  revalidatePath("/suppliers");
-}
-
 export async function deleteSupplierAction(id: string): Promise<void> {
   const s = await requireAdminSession();
   await deleteSupplier(s.companyId, id);
@@ -281,4 +319,58 @@ export async function backfillNamesAction(): Promise<{ items: number; suppliers:
   const r = await backfillHistoryNames(s.companyId);
   revalidatePath("/prices");
   return r;
+}
+
+/* ---------------- 社員マスタ ---------------- */
+
+export async function upsertEmployeeAction(formData: FormData): Promise<void> {
+  const s = await requireAdminSession();
+  const loginId = String(formData.get("loginId") ?? "").trim();
+  if (!loginId) throw new Error("社員番号は必須です");
+  const wf = String(formData.get("wfRole") ?? "");
+  await upsertEmployee(s.companyId, {
+    loginId,
+    name: String(formData.get("name") ?? "").trim(),
+    wfRole: wf === "mgr" || wf === "dept" ? wf : null,
+    role: String(formData.get("role") ?? "") === "admin" ? "admin" : "member",
+    email: String(formData.get("email") ?? "").trim() || null,
+  });
+  revalidatePath("/employees");
+}
+
+export async function deleteEmployeeAction(id: string): Promise<void> {
+  const s = await requireAdminSession();
+  await deleteEmployee(s.companyId, id);
+  revalidatePath("/employees");
+}
+
+/**
+ * 社員マスタからログインユーザーを登録・更新し、承認W/Fの承認者も合わせて設定する。
+ * 既存ユーザーは氏名・権限のみ更新（パスワードは変更しない）。
+ */
+export async function syncUsersAction(): Promise<{
+  created: number;
+  updated: number;
+  mgr: number;
+  dept: number;
+}> {
+  const s = await requireAdminSession();
+  const r = await syncUsersFromEmployees(s.companyId);
+  revalidatePath("/employees");
+  revalidatePath("/settings/wf");
+  return { created: r.created, updated: r.updated, mgr: r.mgr.length, dept: r.dept.length };
+}
+
+/** 取引先の担当窓口（企画グループ・管理グループ）の設定（管理者のみ） */
+export async function setSupplierContactsAction(
+  id: string,
+  contacts: { buyerLoginId: string; buyerSubLoginId: string; chaserLoginId: string }
+): Promise<void> {
+  const s = await requireAdminSession();
+  await setSupplierContactIds(s.companyId, id, {
+    buyerLoginId: contacts.buyerLoginId.trim() || null,
+    buyerSubLoginId: contacts.buyerSubLoginId.trim() || null,
+    chaserLoginId: contacts.chaserLoginId.trim() || null,
+  });
+  revalidatePath("/suppliers");
 }

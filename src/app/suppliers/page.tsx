@@ -1,11 +1,11 @@
 import Link from "next/link";
-import { Upload } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
 import { listSuppliers } from "@/lib/db";
 import { deleteSupplierAction, upsertSupplierAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
-import BuyerAssign from "@/components/BuyerAssign";
+import ContactsAssign from "@/components/ContactsAssign";
+import ImportPanel from "@/components/ImportPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -38,21 +38,17 @@ export default async function SuppliersPage({
         title="取引先マスタ"
         description={
           isAdmin
-            ? `発注先の登録・編集と担当バイヤーの割当（全 ${total.toLocaleString()} 件）。`
+            ? `発注先の登録・編集と担当（バイヤー主/副・チェイサー）の割当（全 ${total.toLocaleString()} 件）。`
             : `あなたが担当する発注先（${total.toLocaleString()} 件）。単価申請・単価履歴もこの発注先のみが対象です。`
         }
-        actions={
-          isAdmin && (
-            <Link
-              href="/import?tab=suppliers"
-              className="inline-flex items-center gap-2 rounded-lg border border-[#e11d48] px-4 py-2 text-sm font-semibold text-[#e11d48] hover:bg-[#fff1f2]"
-            >
-              <Upload className="h-4 w-4" />
-              Excel/CSVで一括取込
-            </Link>
-          )
-        }
       />
+
+      {isAdmin && (
+        <ImportPanel
+          kinds={["suppliers", "supplier-contacts"]}
+          title="Excel/CSVで取引先・担当窓口を一括登録"
+        />
+      )}
 
       {isAdmin && (
         <form
@@ -100,7 +96,9 @@ export default async function SuppliersPage({
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
               <th className="px-4 py-2.5 font-medium">発注先CD</th>
               <th className="px-2 py-2.5 font-medium">発注先名</th>
-              <th className="px-2 py-2.5 font-medium">担当バイヤー</th>
+              <th className="px-2 py-2.5 font-medium">
+                担当バイヤー（副）/ チェイサー
+              </th>
               <th className="px-2 py-2.5 font-medium"></th>
             </tr>
           </thead>
@@ -111,13 +109,20 @@ export default async function SuppliersPage({
                 <td className="px-2 py-2">{s.name || <span className="text-[#a0a0a0]">（名称未設定）</span>}</td>
                 <td className="px-2 py-2">
                   {isAdmin ? (
-                    <BuyerAssign
+                    <ContactsAssign
                       supplierId={s.id}
-                      buyerLoginId={s.buyerLoginId}
                       supplierLabel={`${s.code} ${s.name}`}
+                      buyerLoginId={s.buyerLoginId}
+                      buyerSubLoginId={s.buyerSubLoginId ?? null}
+                      chaserLoginId={s.chaserLoginId ?? null}
                     />
                   ) : (
-                    <span className="font-mono text-xs">{s.buyerLoginId ?? "—"}</span>
+                    <span className="font-mono text-xs">
+                      {s.buyerLoginId ?? "—"}
+                      {s.buyerSubLoginId && <span className="text-[#707070]">（{s.buyerSubLoginId}）</span>}
+                      <span className="mx-1 text-[#d5d5d5]">/</span>
+                      {s.chaserLoginId ?? "—"}
+                    </span>
                   )}
                 </td>
                 <td className="px-2 py-2 text-right">

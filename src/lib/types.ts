@@ -174,6 +174,10 @@ export interface Supplier {
   name: string;
   notes: string | null;
   active: boolean;
-  /** 担当バイヤーの社員番号。null = 未割当 */
+  /** 担当バイヤー（企画グループ主担当）の社員番号。null = 未割当 */
   buyerLoginId: string | null;
+  /** 担当バイヤーの副担当（企画グループ括弧書き）の社員番号 */
+  buyerSubLoginId?: string | null;
+  /** チェイサー（管理グループ）の社員番号 */
+  chaserLoginId?: string | null;
 }

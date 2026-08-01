@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download, FileUp, Loader2 } from "lucide-react";
 
-type Kind = "prices" | "items" | "suppliers";
+export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "employees";
+type Kind = ImportKind;
 
 const KIND_INFO: Record<Kind, { label: string; note: string }> = {
   prices: {
@@ -19,14 +20,23 @@ const KIND_INFO: Record<Kind, { label: string; note: string }> = {
     label: "取引先マスタの一括登録",
     note: "発注先CDが同じ既存データは上書き（更新）されます。",
   },
+  "supplier-contacts": {
+    label: "取引先の担当窓口",
+    note: "「取引先CD／取引先名／企画グループ／管理グループ」の一覧をそのまま取り込みます。氏名は社員マスタで社員番号に名寄せします（先に社員マスタを取り込んでください）。「町野 真一（髙橋 彩佳）」のような併記は主担当・副担当に分解します。",
+  },
+  employees: {
+    label: "社員マスタの一括登録",
+    note: "社員番号・氏名・承認W/F（MGR／部門長）・権限（管理者／一般）を登録します。取込後「社員マスタからユーザーを登録」でログインユーザーを作成できます。",
+  },
 };
 
-/** 一括取込フォーム（Excel/CSV）。タブでマスタ取込と単価申請取込を切り替える。 */
-export default function ImportForm({ initialTab }: { initialTab?: string }) {
+/**
+ * Excel/CSV 取込フォーム。各マスタ画面に埋め込んで使う。
+ * kinds を複数渡すとタブで切り替えられる（取引先マスタ＋担当窓口など）。
+ */
+export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
   const router = useRouter();
-  const [kind, setKind] = useState<Kind>(
-    initialTab === "items" || initialTab === "suppliers" ? initialTab : "prices"
-  );
+  const [kind, setKind] = useState<Kind>(kinds[0]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>("");
@@ -53,12 +63,18 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
       if (kind === "prices" && data.requestId) {
         setResult(`${data.count} 件の明細を取り込みました。申請画面に移動します…`);
         setTimeout(() => router.push(`/requests/${data.requestId}`), 800);
+      } else if (kind === "supplier-contacts") {
+        setResult(
+          `${data.count} 件を取り込みました（新規 ${data.created ?? 0} 件 / 更新 ${data.updated ?? 0} 件）。`
+        );
+        router.refresh();
       } else {
         setResult(`${data.count} 件を登録しました。`);
         router.refresh();
       }
       if (Array.isArray(data.errors) && data.errors.length > 0) {
-        setError(`スキップした行: ${data.errors.slice(0, 5).join(" / ")}${data.errors.length > 5 ? ` 他${data.errors.length - 5}件` : ""}`);
+        const head = kind === "supplier-contacts" ? "未反映の担当" : "スキップした行";
+        setError(`${head}: ${data.errors.slice(0, 5).join(" / ")}${data.errors.length > 5 ? ` 他${data.errors.length - 5}件` : ""}`);
       }
     } finally {
       setBusy(false);
@@ -67,9 +83,9 @@ export default function ImportForm({ initialTab }: { initialTab?: string }) {
 
   return (
     <div className="space-y-4">
-      {/* タブ */}
-      <div className="flex flex-wrap gap-2">
-        {(Object.keys(KIND_INFO) as Kind[]).map((k) => (
+      {/* 取込の種類（1種類だけならタブは出さない） */}
+      <div className={`flex flex-wrap gap-2 ${kinds.length < 2 ? "hidden" : ""}`}>
+        {kinds.map((k) => (
           <button
             key={k}
             onClick={() => {
