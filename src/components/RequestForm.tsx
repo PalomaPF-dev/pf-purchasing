@@ -38,6 +38,7 @@ interface FormLine {
   currentPrice: string;
   newPrice: string;
   paidSupplyPrice: string;
+  monthlyQty: string;
   bdSupplyMat: string;
   bdMaterial: string;
   bdRevision: string;
@@ -66,6 +67,7 @@ function emptyLine(startDate: string): FormLine {
     currentPrice: "",
     newPrice: "",
     paidSupplyPrice: "",
+    monthlyQty: "",
     bdSupplyMat: "",
     bdMaterial: "",
     bdRevision: "",
@@ -97,6 +99,7 @@ function fromExisting(l: PriceRequestLine): FormLine {
     currentPrice: n(l.currentPrice),
     newPrice: n(l.newPrice),
     paidSupplyPrice: n(l.paidSupplyPrice),
+    monthlyQty: n(l.monthlyQty),
     bdSupplyMat: n(l.bdSupplyMat),
     bdMaterial: n(l.bdMaterial),
     bdRevision: n(l.bdRevision),
@@ -133,6 +136,7 @@ function toPayload(lines: FormLine[]): LineInput[] {
     currentPrice: toNum(l.currentPrice),
     newPrice: toNum(l.newPrice) ?? NaN,
     paidSupplyPrice: toNum(l.paidSupplyPrice),
+    monthlyQty: toNum(l.monthlyQty),
     bdSupplyMat: toNum(l.bdSupplyMat),
     bdMaterial: toNum(l.bdMaterial),
     bdRevision: toNum(l.bdRevision),
@@ -166,6 +170,22 @@ type Tab = "manual" | "quote" | "bulk";
 /** 明細が「空の1行だけ」か（取り込み結果で置き換えてよいか）の判定 */
 function isBlank(lines: FormLine[]): boolean {
   return lines.length === 1 && !lines[0].itemCd && !lines[0].newPrice;
+}
+
+/** 月当たり金額（新単価 × 月当たり数量）。数量未入力なら null */
+function monthlyAmountOf(l: FormLine): number | null {
+  const q = toNum(l.monthlyQty);
+  const p = toNum(l.newPrice);
+  if (q == null || p == null) return null;
+  return Math.round(q * p * 100) / 100;
+}
+
+/** 単価改訂の月当たり影響額（単価差 × 月当たり数量）。どちらか未入力なら null */
+function impactOf(l: FormLine): number | null {
+  const q = toNum(l.monthlyQty);
+  const d = diffOf(l);
+  if (q == null || d == null) return null;
+  return Math.round(q * d * 100) / 100;
 }
 
 /** 内訳合計 */
@@ -216,6 +236,16 @@ export default function RequestForm({
       ? { code: first.supplierCd, name: first.supplierName ?? "" }
       : null;
   });
+
+  // 単価改訂の影響額（月当たり）。数量が入っている明細だけを合計する
+  const sumOf = (f: (l: FormLine) => number | null): number | null => {
+    const vals = lines.map(f).filter((v): v is number => v != null);
+    if (vals.length === 0) return null;
+    return Math.round(vals.reduce((a, b) => a + b, 0) * 100) / 100;
+  };
+  const totalQty = sumOf((l) => toNum(l.monthlyQty));
+  const totalAmount = sumOf(monthlyAmountOf);
+  const totalImpact = sumOf(impactOf);
 
   /** 品目候補から選択したときに、品名・単位・ロット・納入場所・現行単価をまとめて反映 */
   function pickItem(i: number, it: PickedItem) {
@@ -489,6 +519,9 @@ export default function RequestForm({
                   <th className={`${th} w-24 bg-rose-50 text-right`}>支給単価</th>
                   <th className={`${th} w-28 border-l border-[#eeeeee] bg-slate-50 text-right`}>旧単価</th>
                   <th className={`${th} w-24 border-l border-[#eeeeee] text-right`}>単価差</th>
+                  <th className={`${th} w-24 border-l border-[#eeeeee] text-right`}>月数量</th>
+                  <th className={`${th} w-28 text-right`}>月額</th>
+                  <th className={`${th} w-28 text-right`}>改訂影響額/月</th>
                   <th className={`${th} w-56`}>備考（改訂理由）</th>
                   <th className={`${th} w-20 text-center`}>操作</th>
                 </tr>
@@ -498,6 +531,8 @@ export default function RequestForm({
                   const d = diffOf(l);
                   const s = bdSum(l);
                   const mismatch = d != null && s != null && Math.abs(d - s) > 0.0001;
+                  const amt = monthlyAmountOf(l);
+                  const impact = impactOf(l);
                   const isNew = l.currentPrice.trim() === "";
                   return (
                     <Fragment key={i}>
@@ -596,6 +631,34 @@ export default function RequestForm({
                             </div>
                           )}
                         </td>
+                        {/* 月当たり数量と改訂影響額 */}
+                        <td className={`${td} border-l border-[#f0f0f0]`}>
+                          <input
+                            className={`${cell} text-right`}
+                            inputMode="decimal"
+                            value={l.monthlyQty}
+                            onChange={(e) => update(i, { monthlyQty: e.target.value })}
+                            placeholder="月数量"
+                          />
+                        </td>
+                        <td className={`${td} text-right font-mono text-xs text-[#707070]`}>
+                          {amt == null ? "—" : amt.toLocaleString()}
+                        </td>
+                        <td className={`${td} text-right`}>
+                          <span
+                            className={`font-mono text-sm font-bold ${
+                              impact == null
+                                ? "text-[#a0a0a0]"
+                                : impact > 0
+                                  ? "text-red-700"
+                                  : impact < 0
+                                    ? "text-emerald-700"
+                                    : ""
+                            }`}
+                          >
+                            {impact == null ? "—" : `${impact > 0 ? "+" : ""}${impact.toLocaleString()}`}
+                          </span>
+                        </td>
                         <td className={td}>
                           <input
                             className={cell}
@@ -642,7 +705,7 @@ export default function RequestForm({
                       {openRows.has(i) && (
                         <tr className="border-b border-[#f5f5f5] bg-[#f8fafc]">
                           <td className={td}></td>
-                          <td className={td} colSpan={10}>
+                          <td className={td} colSpan={13}>
                             <div className="mb-1.5 text-[11px] font-bold text-[#707070]">
                               単価差の内訳（改訂理由別・申請書に記載されます）
                               {mismatch && (
@@ -729,6 +792,38 @@ export default function RequestForm({
                   );
                 })}
               </tbody>
+              {/* 合計（単価改訂の影響額） */}
+              <tfoot>
+                <tr className="border-t-2 border-[#e5e5e5] bg-[#fafafa] text-sm font-bold">
+                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={9}>
+                    合計（月当たり）
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono text-xs text-[#707070]">
+                    {totalQty == null ? "—" : totalQty.toLocaleString()}
+                  </td>
+                  <td className="px-2 py-2 text-right font-mono">
+                    {totalAmount == null ? "—" : totalAmount.toLocaleString()}
+                  </td>
+                  <td
+                    className={`px-2 py-2 text-right font-mono ${
+                      totalImpact == null
+                        ? "text-[#a0a0a0]"
+                        : totalImpact > 0
+                          ? "text-red-700"
+                          : totalImpact < 0
+                            ? "text-emerald-700"
+                            : ""
+                    }`}
+                  >
+                    {totalImpact == null
+                      ? "—"
+                      : `${totalImpact > 0 ? "+" : ""}${totalImpact.toLocaleString()}`}
+                  </td>
+                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={2}>
+                    年換算 {totalImpact == null ? "—" : `${(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}`}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
 

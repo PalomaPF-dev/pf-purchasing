@@ -32,7 +32,7 @@ export default async function ItemsPage({
     <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <PageHeader
         title="品番マスタ"
-        description={`品目（品番）の追加・編集・削除（全 ${total.toLocaleString()} 件）。「現在の取引先」は単価履歴の最新の適用単価から表示しています。`}
+        description={`品目（品番）の追加・編集・削除（全 ${total.toLocaleString()} 件）。「現在の取引先」と「適用日」は単価履歴の最新の適用単価から表示しています。`}
       />
 
       <ImportPanel kinds={["items"]} title="Excel/CSVで品番マスタを一括登録" />
@@ -115,7 +115,7 @@ export default async function ItemsPage({
               <th className="px-2 py-2.5 font-medium">借方ICS科目名（製造）</th>
               <th className="px-2 py-2.5 font-medium">品目区分</th>
               <th className="px-2 py-2.5 font-medium">材料区分</th>
-              <th className="px-2 py-2.5 font-medium">登録日</th>
+              <th className="px-2 py-2.5 font-medium">適用日</th>
               <th className="px-2 py-2.5 font-medium"></th>
             </tr>
           </thead>

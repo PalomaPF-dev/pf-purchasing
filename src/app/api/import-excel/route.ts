@@ -29,7 +29,7 @@ export const maxDuration = 120;
 const PRICE_HEADERS = [
   "品目CD", "枝番", "品名", "取引先CD", "取引先名", "納入場所CD", "納入場所名",
   "納品先CD", "納品先名", "単位CD", "ロット数", "通貨", "適用開始日", "適用終了日",
-  "現行単価", "購入単価", "有償支給価格",
+  "現行単価", "購入単価", "有償支給価格", "月当たり数量",
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
 const ITEM_HEADERS = [
@@ -39,7 +39,7 @@ const ITEM_HEADERS = [
 const SUPPLIER_HEADERS = ["取引先CD", "取引先名", "担当バイヤー社員番号", "備考"];
 const CONTACT_HEADERS = ["取引先CD", "取引先名", "企画グループ", "管理グループ"];
 const REASON_HEADERS = [
-  "取引先CD", "品目CD", "開始日", "納入場所CD",
+  "取引先CD", "取引先名", "品目CD", "品名", "開始日", "納入場所CD",
   "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考", "出力社員名",
 ];
 
@@ -341,7 +341,9 @@ export async function POST(req: Request) {
       const payload = dataRows
         .map((r) => ({
           itemCd: get(r, "品目CD"),
+          itemName: get(r, "品名") || null,
           supplierCd: get(r, "取引先CD", "発注先CD"),
+          supplierName: get(r, "取引先名") || null,
           locCd: get(r, "納入場所CD") || null,
           startDate: normDate(get(r, "開始日")),
           reason: get(r, "備考") || null,
@@ -359,6 +361,7 @@ export async function POST(req: Request) {
             r.supplierCd &&
             r.startDate &&
             (r.reason ||
+              r.itemName ||
               [r.bdMaterial, r.bdRevision, r.bdDesign, r.bdForex, r.bdOther].some((v) => v != null))
         )
         .map((r) => ({ ...r, startDate: r.startDate as string }));
@@ -370,9 +373,11 @@ export async function POST(req: Request) {
         ok: true,
         kind,
         count: res.updated,
+        itemNames: res.itemNames,
+        supplierNames: res.supplierNames,
         errors:
           res.unmatched > 0
-            ? [`単価履歴に一致しなかった行が ${res.unmatched} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
+            ? [`単価履歴に一致しなかった行が ${res.unmatched.toLocaleString()} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
             : [],
       });
     }
@@ -415,6 +420,7 @@ export async function POST(req: Request) {
           currentPrice: toNum(get(r, "現行単価")),
           newPrice,
           paidSupplyPrice: toNum(get(r, "有償支給価格")),
+          monthlyQty: toNum(get(r, "月当たり数量", "月数量")),
           bdSupplyMat: toNum(get(r, "支給材建値")),
           bdMaterial: toNum(get(r, "材料建値")),
           bdRevision: toNum(get(r, "単価改定")),

@@ -83,9 +83,6 @@ export default function ItemRow({ item }: { item: Item }) {
             <>
               <span className="font-mono">{item.currentSupplierCd}</span>
               {item.currentSupplierName && <span className="ml-1">{item.currentSupplierName}</span>}
-              {item.currentStartDate && (
-                <span className="block text-[10px] text-[#a0a0a0]">{item.currentStartDate} 適用</span>
-              )}
             </>
           ) : (
             dash
@@ -97,7 +94,7 @@ export default function ItemRow({ item }: { item: Item }) {
         <td className="px-2 py-2 text-xs">{item.icsName ?? dash}</td>
         <td className="px-2 py-2 text-center text-xs">{item.itemClass ?? dash}</td>
         <td className="px-2 py-2 text-center text-xs">{item.materialClass ?? dash}</td>
-        <td className="px-2 py-2 text-xs text-[#707070]">{item.createdAt?.slice(0, 10) ?? dash}</td>
+        <td className="px-2 py-2 text-xs text-[#707070]">{item.currentStartDate ?? dash}</td>
         <td className="whitespace-nowrap px-2 py-2 text-right">
           {error && <span className="mr-2 text-xs text-red-600">{error}</span>}
           <button
@@ -156,7 +153,7 @@ export default function ItemRow({ item }: { item: Item }) {
       <td className="px-2 py-2">
         <input value={f.materialClass} onChange={set("materialClass")} onKeyDown={onKey} className={cell} />
       </td>
-      <td className="px-2 py-2 text-xs text-[#707070]">{item.createdAt?.slice(0, 10) ?? "—"}</td>
+      <td className="px-2 py-2 text-xs text-[#707070]">{item.currentStartDate ?? "—"}</td>
       <td className="whitespace-nowrap px-2 py-2 text-right align-top">
         {error && <span className="mr-2 text-xs text-red-600">{error}</span>}
         <label className="mr-2 inline-flex items-center gap-1 text-[10px] text-[#707070]">

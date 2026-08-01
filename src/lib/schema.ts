@@ -174,6 +174,8 @@ async function buildSchema(): Promise<void> {
       exported_at       TIMESTAMPTZ,
       created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
+  // 単価改訂の影響額を出すための月当たり数量
+  await safeDdl(() => sql`ALTER TABLE price_request_lines ADD COLUMN IF NOT EXISTS monthly_qty DOUBLE PRECISION`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_request_lines_request_idx ON price_request_lines(request_id, seq)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_request_lines_company_idx ON price_request_lines(company_id)`);
 
@@ -244,6 +246,7 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_forex DOUBLE PRECISION`);
   await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS bd_other DOUBLE PRECISION`);
   // 申請情報（誰の・どの申請による改訂か）を履歴からたどれるようにする
+  await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS monthly_qty DOUBLE PRECISION`);
   await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS req_no INTEGER`);
   await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS applicant_name TEXT`);
   await safeDdl(() => sql`ALTER TABLE price_history ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`);

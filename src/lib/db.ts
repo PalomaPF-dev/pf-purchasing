@@ -72,6 +72,7 @@ function mapLine(r: any): PriceRequestLine {
     currentPrice: num(r.current_price),
     newPrice: Number(r.new_price),
     paidSupplyPrice: num(r.paid_supply_price),
+    monthlyQty: num(r.monthly_qty),
     bdSupplyMat: num(r.bd_supply_mat),
     bdMaterial: num(r.bd_material),
     bdRevision: num(r.bd_revision),
@@ -104,6 +105,7 @@ function mapHistory(r: any): PriceHistoryRow {
     price: Number(r.price),
     priceBefore: num(r.price_before),
     taxCd: r.tax_cd ?? null,
+    monthlyQty: num(r.monthly_qty),
     reason: r.reason ?? null,
     bdSupplyMat: num(r.bd_supply_mat),
     bdMaterial: num(r.bd_material),
@@ -321,6 +323,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       current_price: l.currentPrice ?? null,
       new_price: l.newPrice,
       paid_supply_price: l.paidSupplyPrice ?? null,
+      monthly_qty: l.monthlyQty ?? null,
       bd_supply_mat: l.bdSupplyMat ?? null,
       bd_material: l.bdMaterial ?? null,
       bd_revision: l.bdRevision ?? null,
@@ -337,14 +340,14 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       company_id, request_id, seq, item_cd, item_branch, item_name,
       supplier_cd, supplier_name, loc_cd, loc_name, dlv_cd, dlv_name,
       unit_cd, lot_qty, currency, start_date, end_date,
-      current_price, new_price, paid_supply_price,
+      current_price, new_price, paid_supply_price, monthly_qty,
       bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
       reason_note, tax_cd, wg_cd
     )
     SELECT ${companyId}::uuid, ${requestId}::uuid, x.seq, x.item_cd, x.item_branch, x.item_name,
            x.supplier_cd, x.supplier_name, x.loc_cd, x.loc_name, x.dlv_cd, x.dlv_name,
            x.unit_cd, x.lot_qty, x.currency, x.start_date::date, x.end_date::date,
-           x.current_price, x.new_price, x.paid_supply_price,
+           x.current_price, x.new_price, x.paid_supply_price, x.monthly_qty,
            x.bd_supply_mat, x.bd_material, x.bd_revision, x.bd_design, x.bd_forex, x.bd_other,
            x.reason_note, x.tax_cd, x.wg_cd
     FROM jsonb_to_recordset(${JSON.stringify(payload)}::jsonb) AS x(
@@ -352,6 +355,7 @@ async function insertLines(companyId: string, requestId: string, lines: LineInpu
       supplier_cd text, supplier_name text, loc_cd text, loc_name text, dlv_cd text, dlv_name text,
       unit_cd text, lot_qty double precision, currency text, start_date text, end_date text,
       current_price double precision, new_price double precision, paid_supply_price double precision,
+      monthly_qty double precision,
       bd_supply_mat double precision, bd_material double precision, bd_revision double precision,
       bd_design double precision, bd_forex double precision, bd_other double precision,
       reason_note text, tax_cd text, wg_cd text
@@ -624,14 +628,14 @@ async function applyApprovedToHistory(companyId: string, requestId: string): Pro
       INSERT INTO price_history (
         company_id, item_cd, item_branch, item_name, supplier_cd, supplier_name,
         unit_cd, lot_qty, currency, loc_cd, dlv_cd, wg_cd,
-        start_date, end_date, price, price_before, tax_cd, reason, source, request_line_id,
+        start_date, end_date, price, price_before, tax_cd, monthly_qty, reason, source, request_line_id,
         bd_supply_mat, bd_material, bd_revision, bd_design, bd_forex, bd_other,
         req_no, applicant_name, approved_at
       ) VALUES (
         ${companyId}, ${l.item_cd}, ${l.item_branch}, ${l.item_name}, ${l.supplier_cd}, ${l.supplier_name},
         ${l.unit_cd}, ${l.lot_qty}, ${l.currency}, ${l.loc_cd}, ${l.dlv_cd}, ${l.wg_cd},
         ${l.start_date}, ${l.end_date}, ${l.new_price}, ${l.current_price}, ${l.tax_cd},
-        ${l.reason_note}, 'approval', ${l.id},
+        ${l.monthly_qty}, ${l.reason_note}, 'approval', ${l.id},
         ${l.bd_supply_mat}, ${l.bd_material}, ${l.bd_revision}, ${l.bd_design}, ${l.bd_forex}, ${l.bd_other},
         ${reqNo}, ${applicantName}, NOW()
       )`;
@@ -681,7 +685,8 @@ export async function getWfSettings(companyId: string): Promise<WfSettings> {
   const r = (rows as any[])[0];
   if (!r) return { ...WF_DEFAULT };
   return {
-    stages: Number(r.stages) === 1 ? 1 : 2,
+    // 承認は MGR → 部門長 の2段階固定（過去に1段階で保存されていても2として扱う）
+    stages: 2,
     mgrApprovers: Array.isArray(r.mgr_approvers) ? r.mgr_approvers : [],
     deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
     mgrLabel: r.mgr_label || "MGR",
@@ -1822,7 +1827,9 @@ export async function filesForHistoryRows(
 
 export interface HistoryReasonInput {
   itemCd: string;
+  itemName: string | null;
   supplierCd: string;
+  supplierName: string | null;
   locCd: string | null;
   startDate: string;
   reason: string | null;
@@ -1836,31 +1843,27 @@ export interface HistoryReasonInput {
 
 /**
  * 単価改訂履歴の理由・内訳を既存の単価履歴に反映する（初期データ移行の補完）。
- * mcframe の単価情報には改訂理由が含まれないため、改訂履歴のエクスポートで後から埋める。
+ * mcframe の単価情報には改訂理由も品名も含まれないため、改訂履歴のエクスポートで後から埋める。
  * 品目CD・取引先CD・納入場所CD・適用開始日で既存行を特定して更新する（新規行は作らない）。
+ * 品名・取引先名は、移行で作られた名称なしのマスタ（スタブ）にも書き込む。
  */
 export async function applyHistoryReasons(
   companyId: string,
   rows: HistoryReasonInput[]
-): Promise<{ updated: number; unmatched: number }> {
+): Promise<{ updated: number; unmatched: number; itemNames: number; supplierNames: number }> {
   await ensureSchema();
   const sql = getSql();
   const CHUNK = 500;
   let updated = 0;
+  let itemNames = 0;
+  let supplierNames = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const c = rows.slice(i, i + CHUNK);
-    const res = (await sql`
-      UPDATE price_history h SET
-        reason = COALESCE(NULLIF(s.reason, ''), h.reason),
-        bd_material = COALESCE(s.bd_material, h.bd_material),
-        bd_revision = COALESCE(s.bd_revision, h.bd_revision),
-        bd_design = COALESCE(s.bd_design, h.bd_design),
-        bd_forex = COALESCE(s.bd_forex, h.bd_forex),
-        bd_other = COALESCE(s.bd_other, h.bd_other),
-        applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name)
-      FROM unnest(
+    const src = sql`unnest(
         ${c.map((r) => r.itemCd)}::text[],
+        ${c.map((r) => r.itemName ?? "")}::text[],
         ${c.map((r) => r.supplierCd)}::text[],
+        ${c.map((r) => r.supplierName ?? "")}::text[],
         ${c.map((r) => r.locCd ?? "")}::text[],
         ${c.map((r) => r.startDate)}::date[],
         ${c.map((r) => r.reason ?? "")}::text[],
@@ -1870,8 +1873,20 @@ export async function applyHistoryReasons(
         ${c.map((r) => r.bdForex)}::numeric[],
         ${c.map((r) => r.bdOther)}::numeric[],
         ${c.map((r) => r.applicantName ?? "")}::text[]
-      ) AS s(item_cd, supplier_cd, loc_cd, start_date, reason,
-             bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)
+      ) AS s(item_cd, item_name, supplier_cd, supplier_name, loc_cd, start_date, reason,
+             bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)`;
+    const res = (await sql`
+      UPDATE price_history h SET
+        reason = COALESCE(NULLIF(s.reason, ''), h.reason),
+        bd_material = COALESCE(s.bd_material, h.bd_material),
+        bd_revision = COALESCE(s.bd_revision, h.bd_revision),
+        bd_design = COALESCE(s.bd_design, h.bd_design),
+        bd_forex = COALESCE(s.bd_forex, h.bd_forex),
+        bd_other = COALESCE(s.bd_other, h.bd_other),
+        applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name),
+        item_name = COALESCE(NULLIF(h.item_name, ''), NULLIF(s.item_name, '')),
+        supplier_name = COALESCE(NULLIF(h.supplier_name, ''), NULLIF(s.supplier_name, ''))
+      FROM ${src}
       WHERE h.company_id = ${companyId}
         AND h.item_cd = s.item_cd
         AND h.supplier_cd = s.supplier_cd
@@ -1879,8 +1894,24 @@ export async function applyHistoryReasons(
         AND h.start_date = s.start_date
       RETURNING h.id`) as any[];
     updated += res.length;
+
+    // 移行で作られた名称なしのマスタ（スタブ）にも品名・取引先名を入れる
+    const n1 = (await sql`
+      UPDATE items i SET name = s.item_name, updated_at = NOW()
+      FROM ${src}
+      WHERE i.company_id = ${companyId} AND i.code = s.item_cd
+        AND i.name = '' AND s.item_name <> ''
+      RETURNING i.id`) as any[];
+    itemNames += n1.length;
+    const n2 = (await sql`
+      UPDATE suppliers sp SET name = s.supplier_name, updated_at = NOW()
+      FROM ${src}
+      WHERE sp.company_id = ${companyId} AND sp.code = s.supplier_cd
+        AND sp.name = '' AND s.supplier_name <> ''
+      RETURNING sp.id`) as any[];
+    supplierNames += n2.length;
   }
-  return { updated, unmatched: Math.max(0, rows.length - updated) };
+  return { updated, unmatched: Math.max(0, rows.length - updated), itemNames, supplierNames };
 }
 
 /** 申請に含まれる取引先CDの一覧（添付の閲覧権限チェック用） */
