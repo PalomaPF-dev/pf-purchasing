@@ -362,6 +362,8 @@ export async function upsertEmployeeAction(formData: FormData): Promise<void> {
     wfRole: wf === "mgr" || wf === "dept" ? wf : null,
     role: String(formData.get("role") ?? "") === "admin" ? "admin" : "member",
     email: String(formData.get("email") ?? "").trim() || null,
+    mgrLoginId: String(formData.get("mgrLoginId") ?? "").trim() || null,
+    deptLoginId: String(formData.get("deptLoginId") ?? "").trim() || null,
   });
   revalidatePath("/employees");
   revalidatePath("/employees");
@@ -376,6 +378,8 @@ export async function updateEmployeeAction(
     role: "admin" | "member";
     email: string;
     active: boolean;
+    mgrLoginId: string;
+    deptLoginId: string;
   }
 ): Promise<void> {
   const s = await requireAdminSession();
@@ -386,6 +390,8 @@ export async function updateEmployeeAction(
     role: e.role,
     email: e.email.trim() || null,
     active: e.active,
+    mgrLoginId: e.mgrLoginId.trim() || null,
+    deptLoginId: e.deptLoginId.trim() || null,
   });
   revalidatePath("/employees");
   revalidatePath("/employees");

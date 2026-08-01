@@ -92,6 +92,10 @@ async function buildSchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (company_id, login_id)
     )`);
+  // このユーザーの申請を承認する担当者（社員番号）。MGRが複数いる場合の割当に使う。
+  // 未設定なら、承認W/Fで MGR / 部門長 に指定された全員が承認できる。
+  await safeDdl(() => sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS mgr_login_id TEXT`);
+  await safeDdl(() => sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dept_login_id TEXT`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS employees_company_idx ON employees(company_id)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS employees_name_idx ON employees(company_id, name)`);
 
