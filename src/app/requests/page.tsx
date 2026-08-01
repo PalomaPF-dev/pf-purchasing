@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { listRequests } from "@/lib/db";
+import { getWfSettings, listRequests } from "@/lib/db";
 import { REQUEST_STATUS_LABEL, type RequestStatus } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
+import ReqNoSettings from "@/components/ReqNoSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +31,15 @@ export default async function RequestsPage({
 
   // 一般（バイヤー）は自分の担当取引先を含む申請のみ
   const scope = supplierScopeOf(session);
-  const requests = await listRequests(session.companyId, {
-    status: status || null,
-    applicantLoginId: mine ? session.loginId : null,
-    buyerLoginId: scope.buyerLoginId,
-    q: q || null,
-  });
+  const [requests, wf] = await Promise.all([
+    listRequests(session.companyId, {
+      status: status || null,
+      applicantLoginId: mine ? session.loginId : null,
+      buyerLoginId: scope.buyerLoginId,
+      q: q || null,
+    }),
+    getWfSettings(session.companyId),
+  ]);
 
   const qsOf = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
@@ -51,6 +55,10 @@ export default async function RequestsPage({
         title="単価申請"
         description="購入品単価の申請一覧。申請はMGR→部門長の2段階で承認されます。"
         actions={
+          <div className="flex flex-wrap items-center gap-2">
+          {session.role === "admin" && (
+            <ReqNoSettings format={wf.reqFormat} reset={wf.reqReset} />
+          )}
           <Link
             href="/requests/new"
             className="inline-flex items-center gap-2 rounded-lg bg-[#e11d48] px-4 py-2 text-sm font-semibold text-white hover:bg-[#be123c]"
@@ -58,6 +66,7 @@ export default async function RequestsPage({
             <Plus className="h-4 w-4" />
             新規申請
           </Link>
+          </div>
         }
       />
 
@@ -120,7 +129,7 @@ export default async function RequestsPage({
                 <tr key={r.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
                   <td className="px-4 py-2.5 font-mono">
                     <Link href={`/requests/${r.id}`} className="font-semibold text-[#e11d48] hover:underline">
-                      {r.reqNo != null ? `#${r.reqNo}` : "（下書き）"}
+                      {r.reqCode ?? "（下書き）"}
                     </Link>
                   </td>
                   <td className="px-2 py-2.5">

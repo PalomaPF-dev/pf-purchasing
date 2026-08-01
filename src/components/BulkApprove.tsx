@@ -201,7 +201,7 @@ export default function BulkApprove({
                   </td>
                   <td className="px-2 py-2.5 font-mono">
                     <Link href={`/requests/${r.id}`} className="font-semibold text-[#e11d48] hover:underline">
-                      #{r.reqNo}
+                      {r.reqCode ?? `#${r.reqNo}`}
                     </Link>
                   </td>
                   <td className="px-2 py-2.5">

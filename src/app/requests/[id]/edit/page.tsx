@@ -33,7 +33,7 @@ export default async function EditRequestPage({
         申請詳細に戻る
       </Link>
       <PageHeader
-        title={`単価申請の編集 ${detail.request.reqNo != null ? `#${detail.request.reqNo}` : "（下書き）"}`}
+        title={`単価申請の編集 ${detail.request.reqCode ?? "（下書き）"}`}
         description="内容を修正して保存、または再提出します。"
       />
       <RequestForm

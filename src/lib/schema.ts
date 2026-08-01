@@ -290,6 +290,14 @@ async function buildSchema(): Promise<void> {
       updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
 
+  // 申請番号の採番ルール（書式と連番のリセット単位）
+  await safeDdl(() => sql`ALTER TABLE wf_settings ADD COLUMN IF NOT EXISTS req_format TEXT`);
+  await safeDdl(() => sql`ALTER TABLE wf_settings ADD COLUMN IF NOT EXISTS req_reset TEXT`);
+  // 採番結果。req_no は会社内で一意の通番、req_seq はリセット単位内の連番、
+  // req_code は書式を適用した表示用の申請番号。
+  await safeDdl(() => sql`ALTER TABLE price_requests ADD COLUMN IF NOT EXISTS req_seq INTEGER`);
+  await safeDdl(() => sql`ALTER TABLE price_requests ADD COLUMN IF NOT EXISTS req_code TEXT`);
+
   // パスワード設定（招待）トークン
   await safeDdl(() => sql`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (

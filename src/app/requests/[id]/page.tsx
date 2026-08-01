@@ -108,7 +108,7 @@ export default async function RequestDetailPage({
       </Link>
 
       <PageHeader
-        title={`単価申請 ${request.reqNo != null ? `#${request.reqNo}` : "（下書き）"}`}
+        title={`単価申請 ${request.reqCode ?? "（下書き）"}`}
         description={request.title ?? undefined}
         actions={
           <div className="flex items-center gap-2">
