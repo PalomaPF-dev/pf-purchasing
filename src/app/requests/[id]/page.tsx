@@ -121,15 +121,28 @@ export default async function RequestDetailPage({
       <div className="mb-4 overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">
           <thead>
+            {/* 新単価・旧単価をグループ化して新旧を対比（帳票と同じ並び） */}
+            <tr className="border-b border-[#eeeeee] text-center text-xs">
+              <th className="px-3 py-1.5" colSpan={4}></th>
+              <th className="border-l border-[#eeeeee] bg-rose-50 px-2 py-1.5 font-bold text-rose-800" colSpan={3}>
+                新 単 価
+              </th>
+              <th className="border-l border-[#eeeeee] bg-slate-50 px-2 py-1.5 font-bold text-slate-600" colSpan={2}>
+                旧 単 価
+              </th>
+              <th className="border-l border-[#eeeeee] px-2 py-1.5" colSpan={2}></th>
+            </tr>
             <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
               <th className="px-3 py-2.5 font-medium">#</th>
               <th className="px-2 py-2.5 font-medium">品目CD / 品名</th>
               <th className="px-2 py-2.5 font-medium">発注先</th>
               <th className="px-2 py-2.5 font-medium">納入場所</th>
-              <th className="px-2 py-2.5 font-medium">適用開始</th>
-              <th className="px-2 py-2.5 text-right font-medium">現行単価</th>
-              <th className="px-2 py-2.5 text-right font-medium">購入単価</th>
-              <th className="px-2 py-2.5 text-right font-medium">単価差</th>
+              <th className="border-l border-[#eeeeee] bg-rose-50/40 px-2 py-2.5 font-medium">適用日</th>
+              <th className="bg-rose-50/40 px-2 py-2.5 text-right font-medium">単価</th>
+              <th className="bg-rose-50/40 px-2 py-2.5 text-right font-medium">支給単価</th>
+              <th className="border-l border-[#eeeeee] bg-slate-50/60 px-2 py-2.5 font-medium">取消日</th>
+              <th className="bg-slate-50/60 px-2 py-2.5 text-right font-medium">単価</th>
+              <th className="border-l border-[#eeeeee] px-2 py-2.5 text-right font-medium">単価差</th>
               <th className="px-2 py-2.5 font-medium">備考（理由）</th>
             </tr>
           </thead>
@@ -151,11 +164,31 @@ export default async function RequestDetailPage({
                   <td className="px-2 py-2.5 text-xs">
                     {l.locCd ? `${l.locCd} ${l.locName ?? ""}` : "—"}
                   </td>
-                  <td className="px-2 py-2.5">{formatDate(l.startDate)}</td>
-                  <td className="px-2 py-2.5 text-right font-mono">{formatPrice(l.currentPrice)}</td>
-                  <td className="px-2 py-2.5 text-right font-mono font-bold">{formatPrice(l.newPrice)}</td>
+                  {/* 新単価 */}
+                  <td className="border-l border-[#f0f0f0] bg-rose-50/40 px-2 py-2.5">
+                    {formatDate(l.startDate)}
+                  </td>
+                  <td className="bg-rose-50/40 px-2 py-2.5 text-right font-mono font-bold">
+                    {formatPrice(l.newPrice)}
+                  </td>
+                  <td className="bg-rose-50/40 px-2 py-2.5 text-right font-mono text-xs">
+                    {l.paidSupplyPrice != null ? formatPrice(l.paidSupplyPrice) : "—"}
+                  </td>
+                  {/* 旧単価（新規登録品は空欄） */}
+                  <td className="border-l border-[#f0f0f0] bg-slate-50/60 px-2 py-2.5 text-xs text-[#707070]">
+                    {l.currentPrice == null ? (
+                      <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">
+                        新規
+                      </span>
+                    ) : (
+                      formatDate(dayBefore(l.startDate))
+                    )}
+                  </td>
+                  <td className="bg-slate-50/60 px-2 py-2.5 text-right font-mono text-[#707070]">
+                    {formatPrice(l.currentPrice)}
+                  </td>
                   <td
-                    className={`px-2 py-2.5 text-right font-mono ${
+                    className={`border-l border-[#f0f0f0] px-2 py-2.5 text-right font-mono ${
                       diff != null && diff > 0 ? "text-red-600" : diff != null && diff < 0 ? "text-emerald-600" : ""
                     }`}
                   >
@@ -195,6 +228,14 @@ export default async function RequestDetailPage({
       </section>
     </div>
   );
+}
+
+/** YYYY-MM-DD の前日（旧単価の取消日＝新単価適用日の前日） */
+function dayBefore(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 function ApprovalCell({
