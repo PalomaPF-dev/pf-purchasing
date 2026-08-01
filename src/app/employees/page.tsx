@@ -34,6 +34,8 @@ export default async function EmployeesPage({
   const toC = (list: typeof rows) => list.map((e) => ({ loginId: e.loginId, name: e.name }));
   const mgrCandidates = toC(all.filter((e) => e.active && e.wfRole === "mgr"));
   const deptCandidates = toC(all.filter((e) => e.active && e.wfRole === "dept"));
+  // 承認バイヤーは同じグループの誰でも選べる（自分自身は除く）
+  const buyerCandidatesAll = toC(all.filter((e) => e.active));
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
@@ -57,6 +59,8 @@ export default async function EmployeesPage({
           {wf.mgrLabel}が複数いる場合は、一覧の「承認{wf.mgrLabel}」「承認{wf.deptLabel}」欄で
           <span className="font-medium">ユーザーごとに承認担当者を割り当て</span>できます。
           割り当てると、その人の申請はその担当者だけが承認・差し戻しできます（未割当なら該当段階の承認者全員）。
+          「承認{wf.buyerLabel}」を設定すると、{wf.mgrLabel}承認の<span className="font-medium">前に</span>
+          そのバイヤーの確認が入ります（双方でチェックする運用向け。設定しなければこの段階はありません）。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {(
@@ -133,6 +137,17 @@ export default async function EmployeesPage({
           </select>
         </div>
         <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">承認{wf.buyerLabel}</label>
+          <select name="buyerLoginId" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm">
+            <option value="">なし</option>
+            {buyerCandidatesAll.map((c) => (
+              <option key={c.loginId} value={c.loginId}>
+                {c.name || c.loginId}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
           <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">承認{wf.mgrLabel}</label>
           <select name="mgrLoginId" className="w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm">
             <option value="">全{wf.mgrLabel}</option>
@@ -175,6 +190,7 @@ export default async function EmployeesPage({
               <th className="px-2 py-2.5 font-medium">氏名</th>
               <th className="px-2 py-2.5 font-medium">承認W/F</th>
               <th className="px-2 py-2.5 font-medium">権限</th>
+              <th className="px-2 py-2.5 font-medium">承認{wf.buyerLabel}</th>
               <th className="px-2 py-2.5 font-medium">承認{wf.mgrLabel}</th>
               <th className="px-2 py-2.5 font-medium">承認{wf.deptLabel}</th>
               <th className="px-2 py-2.5 font-medium">メールアドレス</th>
@@ -187,6 +203,8 @@ export default async function EmployeesPage({
               <EmployeeRow
                 key={e.id}
                 employee={e}
+                buyerCandidates={buyerCandidatesAll.filter((c) => c.loginId !== e.loginId)}
+                buyerLabel={wf.buyerLabel}
                 mgrCandidates={mgrCandidates}
                 deptCandidates={deptCandidates}
                 mgrLabel={wf.mgrLabel}

@@ -5,7 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, Undo2 } from "lucide-react";
 import { approveManyAction, rejectManyAction } from "@/lib/actions";
-import { REQUEST_STATUS_LABEL, type PriceRequest } from "@/lib/types";
+import { REQUEST_STATUS_LABEL, type ApprovalStage, type PriceRequest } from "@/lib/types";
+
+type Stage = ApprovalStage;
 import { formatDateTime } from "@/lib/format";
 
 /**
@@ -14,33 +16,38 @@ import { formatDateTime } from "@/lib/format";
  * まとめて処理する（段階をまたいだ一括承認は行わない）。
  */
 export default function BulkApprove({
+  buyerStage,
   pending,
   mgrApproved,
+  buyerLabel,
   mgrLabel,
   deptLabel,
-  stages,
 }: {
+  /** バイヤー確認待ち（申請者に承認バイヤーが割り当てられている申請） */
+  buyerStage: PriceRequest[];
   pending: PriceRequest[];
   mgrApproved: PriceRequest[];
+  buyerLabel: string;
   mgrLabel: string;
   deptLabel: string;
-  stages: 1 | 2;
 }) {
   const router = useRouter();
-  const [stage, setStage] = useState<"mgr" | "dept">("mgr");
+  const [stage, setStage] = useState<Stage>(buyerStage.length > 0 ? "buyer" : "mgr");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState<"none" | "approve" | "reject">("none");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const rows = stage === "mgr" ? pending : mgrApproved;
+  const rows = stage === "buyer" ? buyerStage : stage === "mgr" ? pending : mgrApproved;
+  const labelOf = (st: Stage) =>
+    st === "buyer" ? buyerLabel : st === "mgr" ? mgrLabel : deptLabel;
   const allChecked = useMemo(
     () => rows.length > 0 && rows.every((r) => selected.has(r.id)),
     [rows, selected]
   );
 
-  function switchStage(next: "mgr" | "dept") {
+  function switchStage(next: Stage) {
     setStage(next);
     setSelected(new Set());
     setMessage("");
@@ -96,34 +103,35 @@ export default function BulkApprove({
 
   return (
     <div className="space-y-4">
-      {/* 承認段階の切替（2段階運用のときのみ） */}
-      {stages === 2 && (
-        <div className="inline-flex rounded-lg border border-[#e5e5e5] bg-white p-1 text-sm">
-          {(
-            [
-              ["mgr", `${mgrLabel}承認待ち`, pending.length],
-              ["dept", `${deptLabel}承認待ち`, mgrApproved.length],
-            ] as const
-          ).map(([key, label, count]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => switchStage(key)}
-              className={`rounded-md px-3 py-1.5 font-medium ${
-                stage === key ? "bg-[#e11d48] text-white" : "text-[#555555] hover:bg-[#f7f7f5]"
-              }`}
-            >
-              {label}
-              <span className="ml-1.5 text-xs opacity-80">{count}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      {/* 承認段階の切替（バイヤー確認は対象がある場合のみ表示） */}
+      <div className="inline-flex rounded-lg border border-[#e5e5e5] bg-white p-1 text-sm">
+        {(
+          [
+            ...(buyerStage.length > 0
+              ? ([["buyer", `${buyerLabel}確認待ち`, buyerStage.length]] as const)
+              : []),
+            ["mgr", `${mgrLabel}承認待ち`, pending.length],
+            ["dept", `${deptLabel}承認待ち`, mgrApproved.length],
+          ] as const
+        ).map(([key, label, count]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => switchStage(key)}
+            className={`rounded-md px-3 py-1.5 font-medium ${
+              stage === key ? "bg-[#e11d48] text-white" : "text-[#555555] hover:bg-[#f7f7f5]"
+            }`}
+          >
+            {label}
+            <span className="ml-1.5 text-xs opacity-80">{count}</span>
+          </button>
+        ))}
+      </div>
 
       {/* 一括操作 */}
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
         <div className="mb-2 text-sm font-bold text-amber-900">
-          選択した申請を{stage === "mgr" ? mgrLabel : deptLabel}としてまとめて処理します
+          選択した申請を{labelOf(stage)}としてまとめて処理します
         </div>
         <textarea
           value={comment}

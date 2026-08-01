@@ -94,6 +94,8 @@ async function buildSchema(): Promise<void> {
     )`);
   // このユーザーの申請を承認する担当者（社員番号）。MGRが複数いる場合の割当に使う。
   // 未設定なら、承認W/Fで MGR / 部門長 に指定された全員が承認できる。
+  // 承認バイヤー（MGR承認の前に確認する同じグループのバイヤー）。未設定ならこの段階は無い。
+  await safeDdl(() => sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS buyer_login_id TEXT`);
   await safeDdl(() => sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS mgr_login_id TEXT`);
   await safeDdl(() => sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS dept_login_id TEXT`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS employees_company_idx ON employees(company_id)`);
@@ -291,6 +293,7 @@ async function buildSchema(): Promise<void> {
     )`);
 
   // 申請番号の採番ルール（書式と連番のリセット単位）
+  await safeDdl(() => sql`ALTER TABLE wf_settings ADD COLUMN IF NOT EXISTS buyer_label TEXT`);
   await safeDdl(() => sql`ALTER TABLE wf_settings ADD COLUMN IF NOT EXISTS req_format TEXT`);
   await safeDdl(() => sql`ALTER TABLE wf_settings ADD COLUMN IF NOT EXISTS req_reset TEXT`);
   // 採番結果。req_no は会社内で一意の通番、req_seq はリセット単位内の連番、

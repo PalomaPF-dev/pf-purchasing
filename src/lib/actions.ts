@@ -418,6 +418,7 @@ export async function upsertEmployeeAction(formData: FormData): Promise<void> {
     wfRole: wf === "mgr" || wf === "dept" ? wf : null,
     role: String(formData.get("role") ?? "") === "admin" ? "admin" : "member",
     email: String(formData.get("email") ?? "").trim() || null,
+    buyerLoginId: String(formData.get("buyerLoginId") ?? "").trim() || null,
     mgrLoginId: String(formData.get("mgrLoginId") ?? "").trim() || null,
     deptLoginId: String(formData.get("deptLoginId") ?? "").trim() || null,
   });
@@ -434,6 +435,7 @@ export async function updateEmployeeAction(
     role: "admin" | "member";
     email: string;
     active: boolean;
+    buyerLoginId: string;
     mgrLoginId: string;
     deptLoginId: string;
   }
@@ -446,6 +448,7 @@ export async function updateEmployeeAction(
     role: e.role,
     email: e.email.trim() || null,
     active: e.active,
+    buyerLoginId: e.buyerLoginId.trim() || null,
     mgrLoginId: e.mgrLoginId.trim() || null,
     deptLoginId: e.deptLoginId.trim() || null,
   });

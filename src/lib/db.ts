@@ -576,8 +576,8 @@ async function assertCanApprove(
     WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[];
   const assigned = await assignedApprovers(companyId, rows[0]?.applicant_login_id ?? null);
   if (canApproveRequest(wf, stage, approverLoginId, assigned)) return;
-  const label = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
-  const target = stage === "mgr" ? assigned.mgr : assigned.dept;
+  const label = stageLabelOf(wf, stage);
+  const target = assigned[stage];
   if (!target) throw new Error(`${label}承認の権限がありません（承認者に指定されていません）。`);
   const who = (await sql`
     SELECT name FROM employees
@@ -600,20 +600,35 @@ export async function approveRequest(
   await ensureSchema();
   const sql = getSql();
   const wf = await getWfSettings(companyId);
+  const applicantOf = ((await sql`
+    SELECT applicant_login_id FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[])[0] ?? {};
   await assertCanApprove(companyId, requestId, stage, approver.loginId);
-  const from = stage === "mgr" ? "pending" : "mgr_approved";
-  // 1段階運用ではMGR承認で完了扱いにする
-  const to = stage === "mgr" ? (wf.stages === 1 ? "approved" : "mgr_approved") : "approved";
+  // バイヤー確認が割り当てられている申請は pending → buyer_approved → mgr_approved → approved
+  const assigned = await assignedApprovers(companyId, applicantOf.applicant_login_id ?? null);
+  const from =
+    stage === "buyer" ? "pending" : stage === "mgr" ? (assigned.buyer ? "buyer_approved" : "pending") : "mgr_approved";
+  const to = stage === "buyer" ? "buyer_approved" : stage === "mgr" ? "mgr_approved" : "approved";
   const rows = await sql`
     UPDATE price_requests SET status = ${to}, updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${requestId} AND status = ${from}
     RETURNING id`;
-  if ((rows as any[]).length === 0)
-    throw new Error("承認できませんでした（既に処理済みか、承認段階が一致しません）");
+  if ((rows as any[]).length === 0) {
+    // 前の段階が残っている場合は、何を待っているのかを伝える
+    const now = ((await sql`
+      SELECT status FROM price_requests WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[])[0]
+      ?.status as RequestStatus | undefined;
+    const nextStage = now ? stageOfStatus(now, assigned) : null;
+    throw new Error(
+      nextStage && nextStage !== stage
+        ? `${stageLabelOf(wf, stage)}承認できませんでした（この申請は${stageLabelOf(wf, nextStage)}の処理待ちです）。`
+        : "承認できませんでした（既に処理済みか、承認段階が一致しません）"
+    );
+  }
   await sql`
     INSERT INTO request_approvals (company_id, request_id, stage, action, approver_login_id, approver_name, comment)
     VALUES (${companyId}, ${requestId}, ${stage}, 'approve', ${approver.loginId}, ${approver.name}, ${comment})`;
-  const stageLabel = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
+  const stageLabel = stageLabelOf(wf, stage);
   await addRequestMessage(
     companyId,
     requestId,
@@ -637,7 +652,12 @@ export async function rejectRequest(
   await ensureSchema();
   const sql = getSql();
   await assertCanApprove(companyId, requestId, stage, approver.loginId);
-  const from = stage === "mgr" ? "pending" : "mgr_approved";
+  const applicant = ((await sql`
+    SELECT applicant_login_id FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[])[0] ?? {};
+  const assigned = await assignedApprovers(companyId, applicant.applicant_login_id ?? null);
+  const from =
+    stage === "buyer" ? "pending" : stage === "mgr" ? (assigned.buyer ? "buyer_approved" : "pending") : "mgr_approved";
   const rows = await sql`
     UPDATE price_requests SET status = 'rejected', updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${requestId} AND status = ${from}
@@ -725,6 +745,7 @@ export interface WfSettings {
   mgrApprovers: string[];
   deptApprovers: string[];
   /** 帳票・画面に表示する承認段階の名称 */
+  buyerLabel: string;
   mgrLabel: string;
   deptLabel: string;
   /** 申請番号の書式。{YYYY} {YY} {MM} {SEQ}（{SEQ4} で桁数指定）が使える */
@@ -753,6 +774,7 @@ const WF_DEFAULT: WfSettings = {
   stages: 2,
   mgrApprovers: [],
   deptApprovers: [],
+  buyerLabel: "バイヤー",
   mgrLabel: "MGR",
   deptLabel: "部門長",
   reqFormat: "{YYYY}-{SEQ4}",
@@ -771,6 +793,7 @@ export async function getWfSettings(companyId: string): Promise<WfSettings> {
     stages: 2,
     mgrApprovers: Array.isArray(r.mgr_approvers) ? r.mgr_approvers : [],
     deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
+    buyerLabel: r.buyer_label || "バイヤー",
     mgrLabel: r.mgr_label || "MGR",
     deptLabel: r.dept_label || "部門長",
     reqFormat: r.req_format || WF_DEFAULT.reqFormat,
@@ -785,14 +808,16 @@ export async function saveWfSettings(companyId: string, w: WfSettings): Promise<
   const clean = (a: string[]) => [...new Set(a.map((x) => x.trim()).filter(Boolean))];
   await sql`
     INSERT INTO wf_settings (company_id, stages, mgr_approvers, dept_approvers,
-                             mgr_label, dept_label, req_format, req_reset)
+                             buyer_label, mgr_label, dept_label, req_format, req_reset)
     VALUES (${companyId}, ${w.stages}, ${clean(w.mgrApprovers)}, ${clean(w.deptApprovers)},
+            ${w.buyerLabel.trim() || "バイヤー"},
             ${w.mgrLabel.trim() || "MGR"}, ${w.deptLabel.trim() || "部門長"},
             ${w.reqFormat.trim() || WF_DEFAULT.reqFormat}, ${w.reqReset})
     ON CONFLICT (company_id) DO UPDATE SET
       stages = EXCLUDED.stages,
       mgr_approvers = EXCLUDED.mgr_approvers,
       dept_approvers = EXCLUDED.dept_approvers,
+      buyer_label = EXCLUDED.buyer_label,
       mgr_label = EXCLUDED.mgr_label,
       dept_label = EXCLUDED.dept_label,
       req_format = EXCLUDED.req_format,
@@ -808,48 +833,88 @@ export async function saveWfSettings(companyId: string, w: WfSettings): Promise<
  * 申請者に割り当てられた承認担当者（社員マスタの mgr_login_id / dept_login_id）。
  * MGRが複数いる場合に、申請者ごとにどのMGRが承認するかを決めるために使う。
  */
+export interface AssignedApprovers {
+  /** MGR承認の前に確認するバイヤー。null＝バイヤー確認の段階なし */
+  buyer: string | null;
+  mgr: string | null;
+  dept: string | null;
+}
+
 export async function assignedApprovers(
   companyId: string,
   applicantLoginId: string | null
-): Promise<{ mgr: string | null; dept: string | null }> {
-  if (!applicantLoginId) return { mgr: null, dept: null };
+): Promise<AssignedApprovers> {
+  if (!applicantLoginId) return { buyer: null, mgr: null, dept: null };
   await ensureSchema();
   const sql = getSql();
   const rows = (await sql`
-    SELECT mgr_login_id, dept_login_id FROM employees
+    SELECT buyer_login_id, mgr_login_id, dept_login_id FROM employees
     WHERE company_id = ${companyId} AND login_id = ${applicantLoginId} LIMIT 1`) as any[];
-  return { mgr: rows[0]?.mgr_login_id ?? null, dept: rows[0]?.dept_login_id ?? null };
+  return {
+    buyer: rows[0]?.buyer_login_id ?? null,
+    mgr: rows[0]?.mgr_login_id ?? null,
+    dept: rows[0]?.dept_login_id ?? null,
+  };
+}
+
+/**
+ * 申請の現在ステータスに対応する承認段階。
+ * バイヤー確認が割り当てられている申請は pending＝バイヤー確認、
+ * 割り当てが無ければ pending＝MGR承認。
+ */
+export function stageOfStatus(
+  status: RequestStatus,
+  assigned: AssignedApprovers
+): ApprovalStage | null {
+  if (status === "pending") return assigned.buyer ? "buyer" : "mgr";
+  if (status === "buyer_approved") return "mgr";
+  if (status === "mgr_approved") return "dept";
+  return null;
 }
 
 /** 申請者ごとの承認担当者の一覧（承認画面の絞り込み用）。 */
 export async function assignedApproverMap(
   companyId: string
-): Promise<Map<string, { mgr: string | null; dept: string | null }>> {
+): Promise<Map<string, AssignedApprovers>> {
   await ensureSchema();
   const sql = getSql();
   const rows = (await sql`
-    SELECT login_id, mgr_login_id, dept_login_id FROM employees
+    SELECT login_id, buyer_login_id, mgr_login_id, dept_login_id FROM employees
     WHERE company_id = ${companyId}`) as any[];
-  const m = new Map<string, { mgr: string | null; dept: string | null }>();
+  const m = new Map<string, AssignedApprovers>();
   for (const r of rows) {
-    m.set(r.login_id, { mgr: r.mgr_login_id ?? null, dept: r.dept_login_id ?? null });
+    m.set(r.login_id, {
+      buyer: r.buyer_login_id ?? null,
+      mgr: r.mgr_login_id ?? null,
+      dept: r.dept_login_id ?? null,
+    });
   }
   return m;
 }
+
+/** 承認者が未割当の場合のフォールバック（全段階 null） */
+export const NO_ASSIGNED: AssignedApprovers = { buyer: null, mgr: null, dept: null };
 
 /**
  * その申請を、その人が承認できるか。
  * 申請者に承認担当者が割り当てられていればその人だけ、
  * 割り当てが無ければ承認W/Fの承認者リスト（空なら全管理者）で判定する。
  */
+/** 承認段階の表示名（設定した名称を使う） */
+export function stageLabelOf(wf: WfSettings, stage: ApprovalStage): string {
+  return stage === "buyer" ? wf.buyerLabel : stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
+}
+
 export function canApproveRequest(
   wf: WfSettings,
   stage: ApprovalStage,
   approverLoginId: string | null,
-  assigned: { mgr: string | null; dept: string | null }
+  assigned: AssignedApprovers
 ): boolean {
-  const target = stage === "mgr" ? assigned.mgr : assigned.dept;
+  const target = assigned[stage];
   if (target) return approverLoginId === target;
+  // バイヤー確認は割当がある申請にしか存在しない段階なので、フォールバックしない
+  if (stage === "buyer") return false;
   return canApproveStage(wf, stage, approverLoginId);
 }
 
@@ -858,6 +923,7 @@ export function canApproveStage(
   stage: ApprovalStage,
   loginId: string | null
 ): boolean {
+  if (stage === "buyer") return false;
   const list = stage === "mgr" ? wf.mgrApprovers : wf.deptApprovers;
   if (list.length === 0) return true;
   return loginId != null && list.includes(loginId);
@@ -1730,9 +1796,11 @@ export interface Employee {
   email: string | null;
   active: boolean;
   /** この社員の申請を承認する担当者（社員番号）。未設定なら承認者全員が承認できる */
+  buyerLoginId: string | null;
   mgrLoginId: string | null;
   deptLoginId: string | null;
   /** 承認担当者の氏名（表示用） */
+  buyerName?: string | null;
   mgrName?: string | null;
   deptName?: string | null;
   /** アプリのユーザーとして登録済みか */
@@ -1765,6 +1833,8 @@ export async function listEmployees(
   const rows = await sql`
     SELECT e.*,
       EXISTS (SELECT 1 FROM users u WHERE u.login_id = e.login_id) AS user_exists,
+      (SELECT b.name FROM employees b
+        WHERE b.company_id = e.company_id AND b.login_id = e.buyer_login_id) AS buyer_name,
       (SELECT m.name FROM employees m
         WHERE m.company_id = e.company_id AND m.login_id = e.mgr_login_id) AS mgr_name,
       (SELECT d.name FROM employees d
@@ -1781,8 +1851,10 @@ export async function listEmployees(
     role: r.role === "admin" ? "admin" : "member",
     email: r.email ?? null,
     active: Boolean(r.active),
+    buyerLoginId: r.buyer_login_id ?? null,
     mgrLoginId: r.mgr_login_id ?? null,
     deptLoginId: r.dept_login_id ?? null,
+    buyerName: r.buyer_name ?? null,
     mgrName: r.mgr_name ?? null,
     deptName: r.dept_name ?? null,
     userExists: Boolean(r.user_exists),
@@ -1818,6 +1890,7 @@ export async function upsertEmployee(
     wfRole?: "mgr" | "dept" | null;
     role?: "admin" | "member";
     email?: string | null;
+    buyerLoginId?: string | null;
     mgrLoginId?: string | null;
     deptLoginId?: string | null;
   }
@@ -1825,15 +1898,17 @@ export async function upsertEmployee(
   await ensureSchema();
   const sql = getSql();
   await sql`
-    INSERT INTO employees (company_id, login_id, name, wf_role, role, email, mgr_login_id, dept_login_id)
+    INSERT INTO employees (company_id, login_id, name, wf_role, role, email,
+                           buyer_login_id, mgr_login_id, dept_login_id)
     VALUES (${companyId}, ${e.loginId.trim()}, ${normalizeName(e.name)},
             ${e.wfRole ?? null}, ${e.role ?? "member"}, ${e.email ?? null},
-            ${e.mgrLoginId ?? null}, ${e.deptLoginId ?? null})
+            ${e.buyerLoginId ?? null}, ${e.mgrLoginId ?? null}, ${e.deptLoginId ?? null})
     ON CONFLICT (company_id, login_id) DO UPDATE SET
       name = EXCLUDED.name,
       wf_role = EXCLUDED.wf_role,
       role = EXCLUDED.role,
       email = COALESCE(EXCLUDED.email, employees.email),
+      buyer_login_id = COALESCE(EXCLUDED.buyer_login_id, employees.buyer_login_id),
       mgr_login_id = COALESCE(EXCLUDED.mgr_login_id, employees.mgr_login_id),
       dept_login_id = COALESCE(EXCLUDED.dept_login_id, employees.dept_login_id),
       active = true,
@@ -1854,6 +1929,7 @@ export async function updateEmployee(
     role: "admin" | "member";
     email: string | null;
     active: boolean;
+    buyerLoginId: string | null;
     mgrLoginId: string | null;
     deptLoginId: string | null;
   }
@@ -1867,6 +1943,7 @@ export async function updateEmployee(
       role = ${e.role},
       email = ${e.email},
       active = ${e.active},
+      buyer_login_id = ${e.buyerLoginId},
       mgr_login_id = ${e.mgrLoginId},
       dept_login_id = ${e.deptLoginId},
       updated_at = NOW()
