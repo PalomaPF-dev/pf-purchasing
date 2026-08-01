@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { getRequest, getWfSettings } from "@/lib/db";
+import { assignedApprovers, getRequest, getWfSettings } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import type { PriceRequestLine } from "@/lib/types";
@@ -42,6 +42,9 @@ export default async function RequestPrintPage({
 
   const mgr = [...approvals].reverse().find((a) => a.stage === "mgr" && a.action === "approve");
   const dept = [...approvals].reverse().find((a) => a.stage === "dept" && a.action === "approve");
+  // バイヤー確認が設定されている申請だけ、承認欄にその列を出す
+  const assigned = await assignedApprovers(session.companyId, request.applicantLoginId);
+  const buyer = [...approvals].reverse().find((a) => a.stage === "buyer" && a.action === "approve");
 
   // 取引先は明細の先頭を代表として見出しに出す（複数取引先が混在する場合は各行にも表示される）
   const head = lines[0];
@@ -107,18 +110,20 @@ export default async function RequestPrintPage({
               <tbody>
                 <tr>
                   <td className={`${th} w-24`}>発行日</td>
-                  {wf.stages === 2 && <td className={`${th} w-24`}>{wf.deptLabel}</td>}
+                  <td className={`${th} w-24`}>{wf.deptLabel}</td>
                   <td className={`${th} w-24`}>{wf.mgrLabel}</td>
+                  {assigned.buyer && <td className={`${th} w-24`}>{wf.buyerLabel}</td>}
                   <td className={`${th} w-24`}>担当</td>
                 </tr>
                 <tr>
                   <td className={`${td} h-20 align-middle text-center text-[11px]`}>
                     {formatDate(request.submittedAt ?? request.createdAt)}
                   </td>
-                  {wf.stages === 2 && (
-                    <ApprovalCell name={dept?.approverName} date={dept?.createdAt} />
-                  )}
+                  <ApprovalCell name={dept?.approverName} date={dept?.createdAt} />
                   <ApprovalCell name={mgr?.approverName} date={mgr?.createdAt} />
+                  {assigned.buyer && (
+                    <ApprovalCell name={buyer?.approverName} date={buyer?.createdAt} />
+                  )}
                   <ApprovalCell name={request.applicantName} date={request.submittedAt} />
                 </tr>
               </tbody>

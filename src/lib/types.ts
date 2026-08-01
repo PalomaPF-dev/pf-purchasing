@@ -1,20 +1,33 @@
 // ===== ドメイン型（PF購買単価） =====
 
-/** 申請ステータス。draft=下書き → pending=MGR承認待ち → mgr_approved=部門長承認待ち → approved / rejected */
-export type RequestStatus = "draft" | "pending" | "mgr_approved" | "approved" | "rejected";
+/**
+ * 申請ステータス。
+ * draft=下書き → pending → （バイヤー確認が有効なら buyer_approved）→ mgr_approved → approved
+ * pending は「バイヤー確認待ち」または「MGR承認待ち」のどちらか
+ * （申請者に承認バイヤーが割り当てられているかで決まる）。
+ */
+export type RequestStatus =
+  | "draft"
+  | "pending"
+  | "buyer_approved"
+  | "mgr_approved"
+  | "approved"
+  | "rejected";
 
 export const REQUEST_STATUS_LABEL: Record<RequestStatus, string> = {
   draft: "下書き",
-  pending: "MGR承認待ち",
+  pending: "承認待ち",
+  buyer_approved: "MGR承認待ち",
   mgr_approved: "部門長承認待ち",
   approved: "承認済",
   rejected: "差し戻し",
 };
 
-/** 承認段階。mgr=MGR（課長）、dept=部門長 */
-export type ApprovalStage = "mgr" | "dept";
+/** 承認段階。buyer=バイヤー確認（任意）、mgr=MGR（課長）、dept=部門長 */
+export type ApprovalStage = "buyer" | "mgr" | "dept";
 
 export const APPROVAL_STAGE_LABEL: Record<ApprovalStage, string> = {
+  buyer: "バイヤー",
   mgr: "MGR",
   dept: "部門長",
 };

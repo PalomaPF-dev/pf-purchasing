@@ -9,6 +9,9 @@ import {
   getWfSettings,
   listEmployees,
   listRequestFiles,
+  NO_ASSIGNED,
+  stageLabelOf,
+  stageOfStatus,
 } from "@/lib/db";
 import { REQUEST_STATUS_LABEL, type PriceRequestLine } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
@@ -61,16 +64,22 @@ export default async function RequestDetailPage({
 
   const isAdmin = session.role === "admin";
   const editable = request.status === "draft" || request.status === "rejected";
-  const waiting = request.status === "pending" || request.status === "mgr_approved";
-  const currentStage = request.status === "pending" ? ("mgr" as const) : ("dept" as const);
+  const waiting =
+    request.status === "pending" ||
+    request.status === "buyer_approved" ||
+    request.status === "mgr_approved";
   // 申請者に承認担当者が割り当てられている場合、その人だけが承認・差し戻しできる
   const assigned = waiting
     ? await assignedApprovers(session.companyId, request.applicantLoginId)
-    : { mgr: null, dept: null };
+    : NO_ASSIGNED;
+  const currentStage = stageOfStatus(request.status, assigned) ?? "mgr";
+  // バイヤー確認は割り当てられた本人（管理者でなくても可）、それ以外は管理者
   const approvable =
-    isAdmin && waiting && canApproveRequest(wf, currentStage, session.loginId, assigned);
+    waiting &&
+    (currentStage === "buyer" || isAdmin) &&
+    canApproveRequest(wf, currentStage, session.loginId, assigned);
   // 担当者が別にいる場合は、誰が承認するのかを表示する
-  const assignedTo = waiting ? (currentStage === "mgr" ? assigned.mgr : assigned.dept) : null;
+  const assignedTo = waiting ? assigned[currentStage] : null;
   const assignedName =
     assignedTo && !approvable
       ? (await listEmployees(session.companyId, { q: assignedTo })).find(
@@ -78,7 +87,7 @@ export default async function RequestDetailPage({
         )?.name ?? null
       : null;
   // 提出後の取り下げ（下書きに戻して修正・削除）は申請者本人と管理者
-  const submitted = request.status === "pending" || request.status === "mgr_approved";
+  const submitted = waiting;
   const withdrawable =
     submitted && (isAdmin || (!!request.applicantLoginId && request.applicantLoginId === session.loginId));
   const exportedCount = lines.filter((l) => l.exportedAt).length;
@@ -160,6 +169,12 @@ export default async function RequestDetailPage({
           <div className="text-xs text-[#707070]">提出日時</div>
           <div className="font-medium">{formatDateTime(request.submittedAt)}</div>
         </div>
+        {assigned.buyer && (
+          <div>
+            <div className="text-xs text-[#707070]">{wf.buyerLabel}確認</div>
+            <ApprovalCell approvals={approvals} stage="buyer" />
+          </div>
+        )}
         <div>
           <div className="text-xs text-[#707070]">{wf.mgrLabel}承認</div>
           <ApprovalCell approvals={approvals} stage="mgr" />
@@ -176,14 +191,14 @@ export default async function RequestDetailPage({
           <ApprovalActions
             requestId={request.id}
             stage={stage}
-            stageLabel={stage === "mgr" ? wf.mgrLabel : wf.deptLabel}
+            stageLabel={stageLabelOf(wf, stage)}
           />
         </div>
       )}
       {/* 承認担当が別の人の場合は、その旨を表示する */}
       {waiting && !approvable && assignedTo && (
         <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-[#fafafa] px-4 py-3 text-sm text-[#555555]">
-          この申請の{currentStage === "mgr" ? wf.mgrLabel : wf.deptLabel}承認は{" "}
+          この申請の{stageLabelOf(wf, currentStage)}承認は{" "}
           <span className="font-medium">
             {assignedName || assignedTo}
             {assignedName && <span className="ml-1 font-mono text-xs text-[#909090]">（{assignedTo}）</span>}
@@ -394,7 +409,7 @@ function ApprovalCell({
   stage,
 }: {
   approvals: { stage: string; action: string; approverName: string | null; createdAt: string }[];
-  stage: "mgr" | "dept";
+  stage: "buyer" | "mgr" | "dept";
 }) {
   const a = [...approvals].reverse().find((x) => x.stage === stage);
   if (!a) return <div className="font-medium text-[#a0a0a0]">未承認</div>;
