@@ -19,6 +19,7 @@ import {
   submitRequest,
   updateDraftRequest,
   saveWfSettings,
+  getWfSettings,
   setSupplierContactIds,
   upsertItem,
   updateItem,
@@ -28,7 +29,6 @@ import {
   deleteEmployee,
   syncUsersFromEmployees,
 } from "./db";
-import type { WfSettings } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
@@ -236,29 +236,16 @@ export async function rejectManyAction(
   return { ok, failed };
 }
 
-/** 承認ワークフロー設定の保存（管理者のみ） */
-export async function saveWfSettingsAction(payload: {
-  stages: 1 | 2;
-  mgrApprovers: string;
-  deptApprovers: string;
-  mgrLabel: string;
-  deptLabel: string;
-}): Promise<void> {
+/** 承認段階の名称の保存（管理者のみ）。承認者はユーザー登録側で管理する。 */
+export async function saveWfLabelsAction(mgrLabel: string, deptLabel: string): Promise<void> {
   const s = await requireAdminSession();
-  const toList = (v: string) =>
-    v
-      .split(/[\s,、，]+/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-  const wf: WfSettings = {
-    stages: payload.stages === 1 ? 1 : 2,
-    mgrApprovers: toList(payload.mgrApprovers),
-    deptApprovers: toList(payload.deptApprovers),
-    mgrLabel: payload.mgrLabel,
-    deptLabel: payload.deptLabel,
-  };
-  await saveWfSettings(s.companyId, wf);
-  revalidatePath("/settings");
+  const wf = await getWfSettings(s.companyId);
+  await saveWfSettings(s.companyId, {
+    ...wf,
+    mgrLabel: mgrLabel.trim() || "MGR",
+    deptLabel: deptLabel.trim() || "部門長",
+  });
+  revalidatePath("/employees");
   revalidatePath("/approvals");
 }
 
@@ -377,7 +364,7 @@ export async function upsertEmployeeAction(formData: FormData): Promise<void> {
     email: String(formData.get("email") ?? "").trim() || null,
   });
   revalidatePath("/employees");
-  revalidatePath("/settings");
+  revalidatePath("/employees");
 }
 
 /** 登録済み社員の編集（管理者のみ）。社員番号は変更できない。 */
@@ -401,14 +388,14 @@ export async function updateEmployeeAction(
     active: e.active,
   });
   revalidatePath("/employees");
-  revalidatePath("/settings");
+  revalidatePath("/employees");
 }
 
 export async function deleteEmployeeAction(id: string): Promise<void> {
   const s = await requireAdminSession();
   await deleteEmployee(s.companyId, id);
   revalidatePath("/employees");
-  revalidatePath("/settings");
+  revalidatePath("/employees");
 }
 
 /**
@@ -424,7 +411,6 @@ export async function syncUsersAction(): Promise<{
   const s = await requireAdminSession();
   const r = await syncUsersFromEmployees(s.companyId);
   revalidatePath("/employees");
-  revalidatePath("/settings/wf");
   return { created: r.created, updated: r.updated, mgr: r.mgr.length, dept: r.dept.length };
 }
 

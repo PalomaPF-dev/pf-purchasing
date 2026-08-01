@@ -1,9 +1,10 @@
 import { requireAdminPage } from "@/lib/session";
-import { listEmployees } from "@/lib/db";
+import { getWfSettings, listEmployees } from "@/lib/db";
 import { upsertEmployeeAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import SyncUsersButton from "@/components/SyncUsersButton";
 import EmployeeRow from "@/components/EmployeeRow";
+import WfLabelsForm from "@/components/WfLabelsForm";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,10 @@ export default async function EmployeesPage({
   const session = await requireAdminPage();
   const sp = await searchParams;
   const q = sp.q ?? "";
-  const rows = await listEmployees(session.companyId, { q: q || null });
+  const [rows, wf] = await Promise.all([
+    listEmployees(session.companyId, { q: q || null }),
+    getWfSettings(session.companyId),
+  ]);
   const pending = rows.filter((e) => e.active && !e.userExists).length;
   // 承認W/Fの現在の指定（この画面での設定がそのまま承認者になる）
   const mgrs = rows.filter((e) => e.active && e.wfRole === "mgr");
@@ -34,17 +38,20 @@ export default async function EmployeesPage({
 
       {/* 承認W/F（この画面の「承認W/F」欄がそのまま承認者になる） */}
       <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-1 text-sm font-bold text-[#333333]">承認ワークフロー（ユーザーごとに指定）</h2>
+        <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-bold text-[#333333]">承認ワークフロー（ユーザーごとに指定）</h2>
+          <WfLabelsForm mgrLabel={wf.mgrLabel} deptLabel={wf.deptLabel} />
+        </div>
         <p className="mb-3 text-sm text-[#707070]">
-          一覧の「承認W/F」欄で MGR / 部門長 を選ぶと、その社員が単価申請の承認者になります（保存した時点で反映されます）。
-          単価申請は <span className="font-medium">MGR承認 → 部門長承認</span> の2段階です。
+          一覧の「承認W/F」欄で {wf.mgrLabel} / {wf.deptLabel} を選ぶと、その社員が単価申請の承認者になります（保存した時点で反映されます）。
+          単価申請は <span className="font-medium">{wf.mgrLabel}承認 → {wf.deptLabel}承認</span> の2段階です。
           どちらも未指定の場合は、すべての管理者が承認できます。
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {(
             [
-              ["MGR承認", mgrs],
-              ["部門長承認", depts],
+              [`${wf.mgrLabel}承認`, mgrs],
+              [`${wf.deptLabel}承認`, depts],
             ] as const
           ).map(([label, list]) => (
             <div key={label} className="rounded-lg border border-[#e5e5e5] p-3">

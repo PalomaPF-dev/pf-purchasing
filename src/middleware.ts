@@ -23,7 +23,6 @@ export const config = {
     "/items",
     "/suppliers",
     "/employees",
-    "/settings",
     "/export",
     "/migrate",
   ],
