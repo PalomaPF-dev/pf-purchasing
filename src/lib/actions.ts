@@ -15,10 +15,12 @@ import {
   rejectRequest,
   submitRequest,
   updateDraftRequest,
+  saveWfSettings,
   setSupplierBuyer,
   upsertItem,
   upsertSupplier,
 } from "./db";
+import type { WfSettings } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
@@ -130,6 +132,87 @@ export async function rejectRequestAction(
   );
   revalidatePath("/requests");
   revalidatePath(`/requests/${requestId}`);
+}
+
+/**
+ * 一括承認（管理者のみ）。選択した申請をまとめて承認する。
+ * 1件ごとに処理し、失敗した申請は理由つきで返す（成功分はそのまま確定）。
+ */
+export async function approveManyAction(
+  requestIds: string[],
+  stage: ApprovalStage,
+  comment: string
+): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
+  const s = await requireAdminSession();
+  const failed: { id: string; message: string }[] = [];
+  let ok = 0;
+  for (const id of requestIds) {
+    try {
+      await approveRequest(
+        s.companyId,
+        id,
+        stage,
+        { loginId: s.loginId, name: s.userName },
+        comment.trim() || null
+      );
+      ok++;
+    } catch (e) {
+      failed.push({ id, message: e instanceof Error ? e.message : "承認に失敗しました" });
+    }
+  }
+  revalidatePath("/approvals");
+  revalidatePath("/requests");
+  revalidatePath("/prices");
+  return { ok, failed };
+}
+
+/** 一括差し戻し（管理者のみ）。理由は必須。 */
+export async function rejectManyAction(
+  requestIds: string[],
+  stage: ApprovalStage,
+  comment: string
+): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
+  const s = await requireAdminSession();
+  if (!comment.trim()) throw new Error("差し戻しの理由を入力してください。");
+  const failed: { id: string; message: string }[] = [];
+  let ok = 0;
+  for (const id of requestIds) {
+    try {
+      await rejectRequest(s.companyId, id, stage, { loginId: s.loginId, name: s.userName }, comment.trim());
+      ok++;
+    } catch (e) {
+      failed.push({ id, message: e instanceof Error ? e.message : "差し戻しに失敗しました" });
+    }
+  }
+  revalidatePath("/approvals");
+  revalidatePath("/requests");
+  return { ok, failed };
+}
+
+/** 承認ワークフロー設定の保存（管理者のみ） */
+export async function saveWfSettingsAction(payload: {
+  stages: 1 | 2;
+  mgrApprovers: string;
+  deptApprovers: string;
+  mgrLabel: string;
+  deptLabel: string;
+}): Promise<void> {
+  const s = await requireAdminSession();
+  const toList = (v: string) =>
+    v
+      .split(/[\s,、，]+/)
+      .map((x) => x.trim())
+      .filter(Boolean);
+  const wf: WfSettings = {
+    stages: payload.stages === 1 ? 1 : 2,
+    mgrApprovers: toList(payload.mgrApprovers),
+    deptApprovers: toList(payload.deptApprovers),
+    mgrLabel: payload.mgrLabel,
+    deptLabel: payload.deptLabel,
+  };
+  await saveWfSettings(s.companyId, wf);
+  revalidatePath("/settings");
+  revalidatePath("/approvals");
 }
 
 /** 承認スレッドへのコメント投稿 */

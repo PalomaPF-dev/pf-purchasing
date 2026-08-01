@@ -217,6 +217,19 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_supplier_idx ON price_history(company_id, supplier_cd, start_date DESC)`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_start_idx ON price_history(company_id, start_date DESC)`);
 
+  // 承認ワークフローの設定（管理者が画面から変更する）。会社ごとに1行。
+  // stages: 1=MGRのみ / 2=MGR→部門長。approvers が空配列なら全管理者が承認できる。
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS wf_settings (
+      company_id     UUID PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+      stages         INTEGER NOT NULL DEFAULT 2,
+      mgr_approvers  TEXT[] NOT NULL DEFAULT '{}',
+      dept_approvers TEXT[] NOT NULL DEFAULT '{}',
+      mgr_label      TEXT NOT NULL DEFAULT 'MGR',
+      dept_label     TEXT NOT NULL DEFAULT '部門長',
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+
   // パスワード設定（招待）トークン
   await safeDdl(() => sql`
     CREATE TABLE IF NOT EXISTS password_reset_tokens (

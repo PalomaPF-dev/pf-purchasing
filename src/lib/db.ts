@@ -420,8 +420,14 @@ export async function approveRequest(
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
+  const wf = await getWfSettings(companyId);
+  if (!canApproveStage(wf, stage, approver.loginId)) {
+    const label = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
+    throw new Error(`${label}承認の権限がありません（承認者に指定されていません）。`);
+  }
   const from = stage === "mgr" ? "pending" : "mgr_approved";
-  const to = stage === "mgr" ? "mgr_approved" : "approved";
+  // 1段階運用ではMGR承認で完了扱いにする
+  const to = stage === "mgr" ? (wf.stages === 1 ? "approved" : "mgr_approved") : "approved";
   const rows = await sql`
     UPDATE price_requests SET status = ${to}, updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${requestId} AND status = ${from}
@@ -431,7 +437,7 @@ export async function approveRequest(
   await sql`
     INSERT INTO request_approvals (company_id, request_id, stage, action, approver_login_id, approver_name, comment)
     VALUES (${companyId}, ${requestId}, ${stage}, 'approve', ${approver.loginId}, ${approver.name}, ${comment})`;
-  const stageLabel = stage === "mgr" ? "MGR" : "部門長";
+  const stageLabel = stage === "mgr" ? wf.mgrLabel : wf.deptLabel;
   await addRequestMessage(
     companyId,
     requestId,
@@ -530,6 +536,76 @@ export async function addRequestMessage(
   await sql`
     INSERT INTO request_messages (company_id, request_id, author_login_id, author_name, body, is_system)
     VALUES (${companyId}, ${requestId}, ${author.loginId}, ${author.name}, ${body}, ${isSystem})`;
+}
+
+
+// ===== 承認ワークフロー設定 =====
+
+export interface WfSettings {
+  /** 承認段階数（1=MGRのみ / 2=MGR→部門長） */
+  stages: 1 | 2;
+  /** 各段階の承認者（社員番号）。空＝全管理者が承認できる */
+  mgrApprovers: string[];
+  deptApprovers: string[];
+  /** 帳票・画面に表示する承認段階の名称 */
+  mgrLabel: string;
+  deptLabel: string;
+}
+
+const WF_DEFAULT: WfSettings = {
+  stages: 2,
+  mgrApprovers: [],
+  deptApprovers: [],
+  mgrLabel: "MGR",
+  deptLabel: "部門長",
+};
+
+/** 承認ワークフロー設定を取得（未設定なら既定値）。 */
+export async function getWfSettings(companyId: string): Promise<WfSettings> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`SELECT * FROM wf_settings WHERE company_id = ${companyId} LIMIT 1`;
+  const r = (rows as any[])[0];
+  if (!r) return { ...WF_DEFAULT };
+  return {
+    stages: Number(r.stages) === 1 ? 1 : 2,
+    mgrApprovers: Array.isArray(r.mgr_approvers) ? r.mgr_approvers : [],
+    deptApprovers: Array.isArray(r.dept_approvers) ? r.dept_approvers : [],
+    mgrLabel: r.mgr_label || "MGR",
+    deptLabel: r.dept_label || "部門長",
+  };
+}
+
+/** 承認ワークフロー設定を保存（管理者操作）。 */
+export async function saveWfSettings(companyId: string, w: WfSettings): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const clean = (a: string[]) => [...new Set(a.map((x) => x.trim()).filter(Boolean))];
+  await sql`
+    INSERT INTO wf_settings (company_id, stages, mgr_approvers, dept_approvers, mgr_label, dept_label)
+    VALUES (${companyId}, ${w.stages}, ${clean(w.mgrApprovers)}, ${clean(w.deptApprovers)},
+            ${w.mgrLabel.trim() || "MGR"}, ${w.deptLabel.trim() || "部門長"})
+    ON CONFLICT (company_id) DO UPDATE SET
+      stages = EXCLUDED.stages,
+      mgr_approvers = EXCLUDED.mgr_approvers,
+      dept_approvers = EXCLUDED.dept_approvers,
+      mgr_label = EXCLUDED.mgr_label,
+      dept_label = EXCLUDED.dept_label,
+      updated_at = NOW()`;
+}
+
+/**
+ * その段階を承認できるユーザーか。
+ * 承認者リストが空の段階は、全管理者が承認できる（既定の運用）。
+ */
+export function canApproveStage(
+  wf: WfSettings,
+  stage: ApprovalStage,
+  loginId: string | null
+): boolean {
+  const list = stage === "mgr" ? wf.mgrApprovers : wf.deptApprovers;
+  if (list.length === 0) return true;
+  return loginId != null && list.includes(loginId);
 }
 
 // ===== 単価履歴 =====

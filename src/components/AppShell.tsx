@@ -12,6 +12,7 @@ import {
   Upload,
   Download,
   DatabaseZap,
+  Settings,
   LogOut,
   Mail,
   BookOpen,
@@ -30,6 +31,7 @@ const NAV: NavItem[] = [
   { href: "/export", label: "MC取込出力", icon: Download, adminOnly: true },
   // 運用開始時の1回限りの作業（日常運用では使わない）
   { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },
+  { href: "/settings", label: "承認W/F設定", icon: Settings, adminOnly: true },
   { href: "/guide", label: "使い方", icon: BookOpen },
 ];
 

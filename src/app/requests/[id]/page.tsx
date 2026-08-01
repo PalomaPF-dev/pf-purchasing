@@ -2,8 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Pencil, Printer } from "lucide-react";
 import { requireSession } from "@/lib/session";
-import { getRequest } from "@/lib/db";
-import { APPROVAL_STAGE_LABEL, REQUEST_STATUS_LABEL } from "@/lib/types";
+import { getRequest, getWfSettings } from "@/lib/db";
+import { REQUEST_STATUS_LABEL } from "@/lib/types";
 import { formatDate, formatDateTime, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ApprovalActions from "@/components/ApprovalActions";
@@ -19,7 +19,10 @@ export default async function RequestDetailPage({
 }) {
   const session = await requireSession();
   const { id } = await params;
-  const detail = await getRequest(session.companyId, id);
+  const [detail, wf] = await Promise.all([
+    getRequest(session.companyId, id),
+    getWfSettings(session.companyId),
+  ]);
   if (!detail) notFound();
   const { request, lines, approvals, messages } = detail;
 
@@ -102,11 +105,11 @@ export default async function RequestDetailPage({
           <div className="font-medium">{formatDateTime(request.submittedAt)}</div>
         </div>
         <div>
-          <div className="text-xs text-[#707070]">MGR承認</div>
+          <div className="text-xs text-[#707070]">{wf.mgrLabel}承認</div>
           <ApprovalCell approvals={approvals} stage="mgr" />
         </div>
         <div>
-          <div className="text-xs text-[#707070]">部門長承認</div>
+          <div className="text-xs text-[#707070]">{wf.deptLabel}承認</div>
           <ApprovalCell approvals={approvals} stage="dept" />
         </div>
       </div>
@@ -117,7 +120,7 @@ export default async function RequestDetailPage({
           <ApprovalActions
             requestId={request.id}
             stage={stage}
-            stageLabel={APPROVAL_STAGE_LABEL[stage]}
+            stageLabel={stage === "mgr" ? wf.mgrLabel : wf.deptLabel}
           />
         </div>
       )}
