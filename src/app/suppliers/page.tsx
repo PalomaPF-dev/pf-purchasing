@@ -6,6 +6,7 @@ import PageHeader from "@/components/PageHeader";
 import DeleteButton from "@/components/DeleteButton";
 import ContactsAssign, { ContactLabel } from "@/components/ContactsAssign";
 import ImportPanel from "@/components/ImportPanel";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
@@ -81,14 +82,7 @@ export default async function SuppliersPage({
         </form>
       )}
 
-      <form action="/suppliers" method="GET" className="mb-4">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="取引先CD・取引先名で検索"
-          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
-        />
-      </form>
+      <SearchBox action="/suppliers" q={q} placeholder="取引先CD・取引先名で検索" total={total} />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">

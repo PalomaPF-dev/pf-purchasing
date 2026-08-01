@@ -5,6 +5,7 @@ import PageHeader from "@/components/PageHeader";
 import SyncUsersButton from "@/components/SyncUsersButton";
 import EmployeeRow from "@/components/EmployeeRow";
 import WfLabelsForm from "@/components/WfLabelsForm";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
@@ -132,14 +133,7 @@ export default async function EmployeesPage({
         </div>
       </form>
 
-      <form action="/employees" method="GET" className="mb-4">
-        <input
-          name="q"
-          defaultValue={q}
-          placeholder="社員番号・氏名で検索"
-          className="w-72 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
-        />
-      </form>
+      <SearchBox action="/employees" q={q} placeholder="社員番号・氏名で検索" total={rows.length} />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">
