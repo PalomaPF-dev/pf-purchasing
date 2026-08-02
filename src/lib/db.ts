@@ -1365,13 +1365,11 @@ export interface LocationRow {
   name: string;
   notes: string | null;
   active: boolean;
-  /** この納入場所を使っている単価履歴の件数（削除の可否判断用） */
-  useCount?: number;
 }
 
 export async function listLocations(
   companyId: string,
-  opts: { q?: string | null; limit?: number; offset?: number; withUsage?: boolean } = {}
+  opts: { q?: string | null; limit?: number; offset?: number } = {}
 ): Promise<{ rows: LocationRow[]; total: number }> {
   await ensureSchema();
   const sql = getSql();
@@ -1382,14 +1380,7 @@ export async function listLocations(
     company_id = ${companyId}
     AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})`;
   const [rows, cnt] = await Promise.all([
-    sql`
-      SELECT l.*, (
-        SELECT COUNT(*)::int FROM price_history h
-        WHERE h.company_id = l.company_id AND h.loc_cd = l.code
-      ) AS use_count
-      FROM locations l WHERE ${where}
-      ORDER BY code
-      LIMIT ${limit} OFFSET ${offset}`,
+    sql`SELECT * FROM locations WHERE ${where} ORDER BY code LIMIT ${limit} OFFSET ${offset}`,
     sql`SELECT COUNT(*)::int AS n FROM locations WHERE ${where}`,
   ]);
   return {
@@ -1399,7 +1390,6 @@ export async function listLocations(
       name: r.name ?? "",
       notes: r.notes ?? null,
       active: r.active,
-      useCount: Number(r.use_count ?? 0),
     })),
     total: Number((cnt as any)[0]?.n ?? 0),
   };

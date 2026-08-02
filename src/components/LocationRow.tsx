@@ -44,9 +44,8 @@ export default function LocationRow({ loc }: { loc: Loc }) {
   }
 
   function remove() {
-    const used = loc.useCount ?? 0;
-    const warn = used > 0 ? `\n※ この納入場所の単価履歴が ${used.toLocaleString()} 件あります（履歴は消えませんが、名称は表示されなくなります）。` : "";
-    if (!confirm(`納入場所 ${loc.code} ${loc.name} を削除しますか？${warn}`)) return;
+    // 単価履歴そのものは消えない（画面に名称が出なくなるだけ）
+    if (!confirm(`納入場所 ${loc.code} ${loc.name} を削除しますか？`)) return;
     setBusy(true);
     deleteLocationAction(loc.id)
       .then((r) => (r.ok ? router.refresh() : setError(r.message)))
@@ -77,9 +76,6 @@ export default function LocationRow({ loc }: { loc: Loc }) {
             有効
           </label>
         </td>
-        <td className={`${cell} text-right text-xs text-[#707070]`}>
-          {(loc.useCount ?? 0).toLocaleString()}
-        </td>
         <td className={`${cell} whitespace-nowrap text-right`}>
           <button onClick={save} disabled={busy} className="mr-1 rounded p-1 text-emerald-600 hover:bg-emerald-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
@@ -105,7 +101,6 @@ export default function LocationRow({ loc }: { loc: Loc }) {
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-500">無効</span>
         )}
       </td>
-      <td className={`${cell} text-right text-xs text-[#707070]`}>{(loc.useCount ?? 0).toLocaleString()}</td>
       <td className={`${cell} whitespace-nowrap text-right`}>
         <button onClick={() => setEditing(true)} className="mr-1 rounded p-1 text-[#707070] hover:bg-[#f5f5f5]" title="編集">
           <Pencil className="h-4 w-4" />
