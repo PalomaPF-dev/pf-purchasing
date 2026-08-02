@@ -32,7 +32,6 @@ export default async function LocationsPage({
   });
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const inputCls = "w-full rounded border border-[#d5d5d5] px-2 py-1.5 text-sm";
-  const noName = rows.filter((r) => !r.name).length;
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -75,13 +74,6 @@ export default async function LocationsPage({
 
       <SearchBox action="/locations" q={q} total={total} placeholder="納入場所CD・名称で検索" />
 
-      {noName > 0 && (
-        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          名称が未登録の納入場所が {noName.toLocaleString()} 件あります（移行データからCDだけ取り込まれたものです）。
-          鉛筆アイコンから名称を入力してください。
-        </div>
-      )}
-
       {rows.length === 0 ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-sm text-[#707070]">
           {q ? "該当する納入場所がありません。" : "納入場所がまだ登録されていません。上のフォームか一括登録から追加してください。"}
@@ -95,7 +87,6 @@ export default async function LocationsPage({
                 <th className="px-2 py-2.5 font-medium">納入場所名</th>
                 <th className="px-2 py-2.5 font-medium">備考</th>
                 <th className="px-2 py-2.5 font-medium">状態</th>
-                <th className="px-2 py-2.5 text-right font-medium">単価履歴</th>
                 <th className="px-2 py-2.5 text-right font-medium">操作</th>
               </tr>
             </thead>
