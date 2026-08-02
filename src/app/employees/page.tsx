@@ -2,7 +2,6 @@ import { requireAdminPage } from "@/lib/session";
 import { getWfSettings, listEmployees } from "@/lib/db";
 import { upsertEmployeeAction } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
-import SyncUsersButton from "@/components/SyncUsersButton";
 import EmployeeRow from "@/components/EmployeeRow";
 import WfLabelsForm from "@/components/WfLabelsForm";
 import SearchBox from "@/components/SearchBox";
@@ -25,7 +24,6 @@ export default async function EmployeesPage({
     listEmployees(session.companyId, { q: q || null }),
     getWfSettings(session.companyId),
   ]);
-  const pending = rows.filter((e) => e.active && !e.userExists).length;
   // 承認W/Fの現在の指定（この画面での設定がそのまま承認者になる）
   const mgrs = rows.filter((e) => e.active && e.wfRole === "mgr");
   const depts = rows.filter((e) => e.active && e.wfRole === "dept");
@@ -89,18 +87,6 @@ export default async function EmployeesPage({
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-5">
-        <h2 className="mb-1 text-sm font-bold text-[#333333]">社員マスタからユーザーを登録</h2>
-        <p className="mb-3 text-sm text-[#707070]">
-          社員マスタの内容でログインユーザーをまとめて作成・更新します（承認者の設定は上の指定がそのまま使われます）。
-          既存ユーザーは氏名と権限のみ更新され、パスワードは変わりません。
-          {pending > 0 && (
-            <span className="ml-1 font-medium text-[#e11d48]">未登録の社員が {pending} 名います。</span>
-          )}
-        </p>
-        <SyncUsersButton />
       </div>
 
       <form
