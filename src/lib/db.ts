@@ -387,12 +387,15 @@ export async function updateDraftRequest(
  * 申請の削除。下書き（と差し戻し）のみ削除でき、提出済みは削除できない
  * （提出済みは「取り下げ」で下書きに戻してから削除する）。
  * 削除できるのは申請者本人と管理者。
+ *
+ * 添付は外部キーの ON DELETE CASCADE で一緒に消えるが、Blob 上の実体は
+ * 残ってしまう。呼び出し元が消せるよう、消えた添付の blob_url を返す。
  */
 export async function deleteRequest(
   companyId: string,
   requestId: string,
   actor: { loginId: string | null; isAdmin: boolean } = { loginId: null, isAdmin: true }
-): Promise<void> {
+): Promise<string[]> {
   await ensureSchema();
   const sql = getSql();
   const cur = (await sql`
@@ -406,7 +409,12 @@ export async function deleteRequest(
     );
   if (!actor.isAdmin && actor.loginId && r.applicant_login_id && r.applicant_login_id !== actor.loginId)
     throw new Error("この下書きを削除できるのは、作成した本人と管理者だけです。");
+  // CASCADE で消える前に、添付の実体の在り処を控えておく
+  const files = (await sql`
+    SELECT blob_url FROM request_files
+    WHERE company_id = ${companyId} AND request_id = ${requestId} AND blob_url IS NOT NULL`) as any[];
   await sql`DELETE FROM price_requests WHERE company_id = ${companyId} AND id = ${requestId}`;
+  return files.map((f) => f.blob_url as string);
 }
 
 /** 申請を提出（draft/rejected → pending）。申請番号を採番する。 */
@@ -2501,7 +2509,11 @@ export async function addRequestFile(
   file: {
     fileName: string;
     contentType: string;
-    data: Buffer;
+    /** Blob に保存済みの場合はその URL。未設定なら data を DB に格納（後方互換）。 */
+    blobUrl?: string | null;
+    /** Blob 未設定環境でのフォールバック用。blobUrl があれば NULL で保存する。 */
+    data?: Buffer | null;
+    sizeBytes: number;
     kind?: string;
     uploadedBy: string | null;
     uploadedName: string | null;
@@ -2511,32 +2523,54 @@ export async function addRequestFile(
   const sql = getSql();
   await sql`
     INSERT INTO request_files (
-      company_id, request_id, file_name, content_type, size_bytes, kind, data, uploaded_by, uploaded_name)
+      company_id, request_id, file_name, content_type, size_bytes, kind,
+      blob_url, data, uploaded_by, uploaded_name)
     VALUES (${companyId}, ${requestId}, ${file.fileName}, ${file.contentType},
-            ${file.data.length}, ${file.kind ?? "quote"}, ${file.data},
+            ${file.sizeBytes}, ${file.kind ?? "quote"},
+            ${file.blobUrl ?? null}, ${file.data ?? null},
             ${file.uploadedBy}, ${file.uploadedName})`;
 }
 
-/** 添付の本体を取得（ダウンロード用） */
+/**
+ * 添付の本体の所在を取得（ダウンロード用）。
+ * blob_url があれば Blob 側（呼び出し元が取得して中継する）、
+ * 無ければ移行前の既存レコードなので DB 内の data を返す。
+ */
 export async function getRequestFile(
   companyId: string,
   fileId: string
-): Promise<{ fileName: string; contentType: string; data: Buffer } | null> {
+): Promise<{
+  fileName: string;
+  contentType: string;
+  blobUrl: string | null;
+  data: Buffer | null;
+} | null> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
-    SELECT file_name, content_type, data FROM request_files
+    SELECT file_name, content_type, blob_url, data FROM request_files
     WHERE company_id = ${companyId} AND id = ${fileId} LIMIT 1`;
   const r = (rows as any[])[0];
   if (!r) return null;
   return {
     fileName: r.file_name,
     contentType: r.content_type ?? "application/octet-stream",
-    data: Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data),
+    blobUrl: r.blob_url ?? null,
+    data: r.data == null ? null : Buffer.isBuffer(r.data) ? r.data : Buffer.from(r.data),
   };
 }
 
-export async function deleteRequestFile(companyId: string, fileId: string): Promise<void> {
+/**
+ * 添付を削除する。Blob 側の実体も消せるよう、削除した行の blob_url を返す。
+ * （実体の削除は呼び出し元が行う。失敗しても DB の整合性は保たれる）
+ */
+export async function deleteRequestFile(
+  companyId: string,
+  fileId: string
+): Promise<{ blobUrl: string | null }> {
   const sql = getSql();
-  await sql`DELETE FROM request_files WHERE company_id = ${companyId} AND id = ${fileId}`;
+  const rows = await sql`
+    DELETE FROM request_files WHERE company_id = ${companyId} AND id = ${fileId}
+    RETURNING blob_url`;
+  return { blobUrl: (rows as any[])[0]?.blob_url ?? null };
 }

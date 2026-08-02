@@ -278,8 +278,10 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS price_history_start_idx ON price_history(company_id, start_date DESC)`);
 
   // 申請の添付資料（見積書・稟議資料など）。承認後は単価履歴からも参照できる。
-  // ファイル本体は Postgres に保持する（Blobストレージの追加設定なしで運用するため）。
-  // 1ファイル4MBまで（Vercel のリクエストボディ上限に合わせる）。
+  // ファイル実体は Vercel Blob の Private ストア（pf-project-private）に置く。
+  // 見積書は機密のため Public ストアは使わない。ダウンロードは必ずアプリ経由で、
+  // 権限チェックを通したうえでサーバーが取得して中継する（URL は外に出さない）。
+  // data 列は Blob 移行前の既存レコード用に残す（新規保存では使わない）。
   await safeDdl(() => sql`
     CREATE TABLE IF NOT EXISTS request_files (
       id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -295,6 +297,10 @@ async function buildSchema(): Promise<void> {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS request_files_request_idx ON request_files(request_id, created_at)`);
+  // Blob 移行に伴う追加。blob_url があればそれが正、無ければ従来どおり data を読む。
+  // 既存レコードを壊さないよう data は NULL 許容へ緩める。
+  await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS blob_url TEXT`);
+  await safeDdl(() => sql`ALTER TABLE request_files ALTER COLUMN data DROP NOT NULL`);
 
   // 承認ワークフローの設定（管理者が画面から変更する）。会社ごとに1行。
   // stages: 1=MGRのみ / 2=MGR→部門長。approvers が空配列なら全管理者が承認できる。

@@ -32,6 +32,7 @@ import {
   deleteLocation,
   renumberRequests,
 } from "./db";
+import { deletePrivateBlob } from "./privateBlob";
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
@@ -181,10 +182,12 @@ export async function cancelApprovalAction(
 export async function deleteRequestAction(requestId: string): Promise<ActionResult> {
   const s = await requireSession();
   const r = await run(async () => {
-    await deleteRequest(s.companyId, requestId, {
+    const orphanBlobs = await deleteRequest(s.companyId, requestId, {
       loginId: s.loginId,
       isAdmin: s.role === "admin",
     });
+    // 申請と一緒に消えた添付の実体も片付ける（失敗しても削除自体は成功扱い）
+    await Promise.all(orphanBlobs.map((u) => deletePrivateBlob(u)));
     revalidatePath("/requests");
     revalidatePath(`/requests/${requestId}`);
   });

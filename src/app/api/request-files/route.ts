@@ -8,10 +8,15 @@ import {
   requestIdOfFile,
 } from "@/lib/db";
 import { canAccessRequest } from "@/lib/requestAccess";
+import { deletePrivateBlob, isPrivateBlobConfigured, putRequestFile } from "@/lib/privateBlob";
 
 export const runtime = "nodejs";
 
-/** 1ファイルの上限（Postgres に直接保存するため控えめに） */
+/**
+ * 1ファイルの上限。
+ * 実体は Private Blob に置くが、アップロードはこの Route を経由するため
+ * Vercel Functions のリクエストボディ上限（4.5MB）が効く。安全側で 4MB とする。
+ */
 const MAX_BYTES = 4 * 1024 * 1024;
 
 /**
@@ -63,12 +68,32 @@ export async function POST(req: Request) {
       );
     }
   }
+  // 実体は Private Blob へ。トークン未設定の環境（オンプレ等）では従来どおり DB に入れる。
+  const useBlob = isPrivateBlobConfigured();
+  // DB 登録前に Blob へ上げるので、途中で失敗したら参照されない実体が残る。
+  // それを消せるように、成功した URL を控えておく。
+  const uploaded: string[] = [];
   try {
     for (const f of files) {
+      const body = Buffer.from(await f.arrayBuffer());
+      const contentType = f.type || "application/octet-stream";
+      let blobUrl: string | null = null;
+      if (useBlob) {
+        blobUrl = await putRequestFile({
+          companyId: session.companyId,
+          requestId,
+          fileName: f.name,
+          contentType,
+          body,
+        });
+        uploaded.push(blobUrl);
+      }
       await addRequestFile(session.companyId, requestId, {
         fileName: f.name,
-        contentType: f.type || "application/octet-stream",
-        data: Buffer.from(await f.arrayBuffer()),
+        contentType,
+        blobUrl,
+        data: blobUrl ? null : body,
+        sizeBytes: body.length,
         kind,
         uploadedBy: session.loginId,
         uploadedName: session.userName,
@@ -76,6 +101,8 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     console.error("[request-files] upload", e);
+    // DB に紐づかなかった実体を後始末する（残しても害はないが課金と混乱の元）
+    await Promise.all(uploaded.map((u) => deletePrivateBlob(u)));
     return NextResponse.json({ error: "添付の保存に失敗しました" }, { status: 500 });
   }
   return NextResponse.json({
@@ -106,6 +133,8 @@ export async function DELETE(req: Request) {
       { status: 409 }
     );
   }
-  await deleteRequestFile(session.companyId, id);
+  const { blobUrl } = await deleteRequestFile(session.companyId, id);
+  // DB から消えた後に実体を消す。失敗しても業務は止めない（privateBlob 側でログのみ）
+  await deletePrivateBlob(blobUrl);
   return NextResponse.json({ ok: true, files: await listRequestFiles(session.companyId, requestId) });
 }
