@@ -30,6 +30,7 @@ import {
   upsertLocation,
   updateLocation,
   deleteLocation,
+  seedLocationsFromHistory,
   renumberRequests,
 } from "./db";
 import { deletePrivateBlob } from "./privateBlob";
@@ -235,6 +236,18 @@ export async function updateLocationAction(
     const s = await requireAdminSession();
     await updateLocation(s.companyId, id, { name, notes: notes.trim() || null, active });
     revalidatePath("/locations");
+  });
+}
+
+/** 過去の単価履歴に出てくる納入場所CDをマスタへ一括登録する（管理者のみ）。 */
+export async function seedLocationsAction(): Promise<
+  ActionResult<{ found: number; created: number }>
+> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    const res = await seedLocationsFromHistory(s.companyId);
+    revalidatePath("/locations");
+    return res;
   });
 }
 

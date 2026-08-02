@@ -1465,6 +1465,30 @@ export async function deleteLocation(companyId: string, id: string): Promise<voi
 }
 
 /**
+ * 過去の単価履歴に出てくる納入場所CDを納入場所マスタへ一括登録する。
+ * 名称の列を取り込む前に移行した履歴からでも、CDだけ先にマスタ化して
+ * 名称は画面で編集（または単価改訂履歴の再取込）で補完できるようにする。
+ * 既に登録済みのCDはそのまま（名称を消さない）。
+ */
+export async function seedLocationsFromHistory(
+  companyId: string
+): Promise<{ found: number; created: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const res = (await sql`
+    INSERT INTO locations (company_id, code)
+    SELECT DISTINCT ${companyId}::uuid, loc_cd
+    FROM price_history
+    WHERE company_id = ${companyId} AND loc_cd IS NOT NULL AND loc_cd <> '' AND loc_cd <> '*'
+    ON CONFLICT (company_id, code) DO NOTHING
+    RETURNING id`) as any[];
+  const cnt = (await sql`
+    SELECT COUNT(DISTINCT loc_cd)::int AS n FROM price_history
+    WHERE company_id = ${companyId} AND loc_cd IS NOT NULL AND loc_cd <> '' AND loc_cd <> '*'`) as any[];
+  return { found: Number(cnt[0]?.n ?? 0), created: res.length };
+}
+
+/**
  * 納入場所の一括登録。
  * 取込（納入場所マスタ・移行データ・単価改訂履歴）から共通で使う。
  * 名称が空の行は既存の名称を消さない（CDだけの行で上書きしないため）。
