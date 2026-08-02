@@ -26,11 +26,9 @@ import {
   upsertEmployee,
   updateEmployee,
   deleteEmployee,
-  syncUsersFromEmployees,
   upsertLocation,
   updateLocation,
   deleteLocation,
-  seedLocationsFromHistory,
   renumberRequests,
 } from "./db";
 import { deletePrivateBlob } from "./privateBlob";
@@ -236,18 +234,6 @@ export async function updateLocationAction(
     const s = await requireAdminSession();
     await updateLocation(s.companyId, id, { name, notes: notes.trim() || null, active });
     revalidatePath("/locations");
-  });
-}
-
-/** 過去の単価履歴に出てくる納入場所CDをマスタへ一括登録する（管理者のみ）。 */
-export async function seedLocationsAction(): Promise<
-  ActionResult<{ found: number; created: number }>
-> {
-  return run(async () => {
-    const s = await requireAdminSession();
-    const res = await seedLocationsFromHistory(s.companyId);
-    revalidatePath("/locations");
-    return res;
   });
 }
 
@@ -543,22 +529,6 @@ export async function deleteEmployeeAction(id: string): Promise<void> {
   await deleteEmployee(s.companyId, id);
   revalidatePath("/employees");
   revalidatePath("/employees");
-}
-
-/**
- * 社員マスタからログインユーザーを登録・更新し、承認W/Fの承認者も合わせて設定する。
- * 既存ユーザーは氏名・権限のみ更新（パスワードは変更しない）。
- */
-export async function syncUsersAction(): Promise<{
-  created: number;
-  updated: number;
-  mgr: number;
-  dept: number;
-}> {
-  const s = await requireAdminSession();
-  const r = await syncUsersFromEmployees(s.companyId);
-  revalidatePath("/employees");
-  return { created: r.created, updated: r.updated, mgr: r.mgr.length, dept: r.dept.length };
 }
 
 /** 取引先の担当窓口（企画グループ・管理グループ）の設定（管理者のみ） */

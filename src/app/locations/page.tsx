@@ -6,7 +6,6 @@ import PageHeader from "@/components/PageHeader";
 import ImportPanel from "@/components/ImportPanel";
 import LocationRow from "@/components/LocationRow";
 import SearchBox from "@/components/SearchBox";
-import SeedLocationsButton from "@/components/SeedLocationsButton";
 
 export const dynamic = "force-dynamic";
 
@@ -43,16 +42,6 @@ export default async function LocationsPage({
       />
 
       <ImportPanel kinds={["locations"]} title="Excel/CSVで納入場所マスタを一括登録" />
-
-      {/* 過去の単価履歴に出てくるCDをまとめて登録する（名称は後から編集で補完） */}
-      <div className="mb-4 rounded-xl border border-[#e5e5e5] bg-white p-4">
-        <h2 className="text-sm font-bold text-[#333333]">単価履歴から登録</h2>
-        <p className="mb-2 text-xs text-[#a0a0a0]">
-          移行済みの単価履歴に出てくる納入場所CDを、まとめてマスタに登録します（登録済みのCDはそのまま）。
-          名称は一覧の鉛筆アイコンから入力するか、初期データ移行の「単価改訂履歴の理由を反映」を再実行すると納入場所名の分かる行に入ります。
-        </p>
-        <SeedLocationsButton />
-      </div>
 
       {/* 追加・更新フォーム */}
       <form
