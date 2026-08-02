@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { listPrices } from "@/lib/db";
+import { listPrices, locationNameMap } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 
@@ -29,6 +29,8 @@ export default async function PricesPage({
     offset: (page - 1) * PAGE_SIZE,
   });
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // 納入場所は CD だけでは分かりにくいのでマスタの名称を添える
+  const locNames = await locationNameMap(session.companyId, rows.map((r) => r.locCd));
 
   const qs = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
@@ -108,7 +110,18 @@ export default async function PricesPage({
                   <td className="px-2 py-2">
                     <span className="font-mono">{p.supplierCd}</span> {p.supplierName ?? ""}
                   </td>
-                  <td className="px-2 py-2 font-mono text-xs">{p.locCd && p.locCd !== "*" ? p.locCd : "—"}</td>
+                  <td className="px-2 py-2 text-xs">
+                    {p.locCd && p.locCd !== "*" ? (
+                      <>
+                        <span className="font-mono">{p.locCd}</span>
+                        {locNames.get(p.locCd) && (
+                          <span className="ml-1 text-[#707070]">{locNames.get(p.locCd)}</span>
+                        )}
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-2 py-2 text-right font-mono font-semibold">{formatPrice(p.price)}</td>
                   <td className="px-2 py-2 text-xs">{formatDate(p.startDate)}</td>
                   <td className="px-2 py-2 text-xs">{formatDate(p.endDate)}</td>

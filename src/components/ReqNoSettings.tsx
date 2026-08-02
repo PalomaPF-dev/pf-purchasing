@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Hash, Loader2, Save } from "lucide-react";
-import { saveReqNoSettingsAction } from "@/lib/actions";
+import { CheckCircle2, Hash, Loader2, RefreshCw, Save } from "lucide-react";
+import { renumberRequestsAction, saveReqNoSettingsAction } from "@/lib/actions";
 
 const PRESETS = [
   { label: "2026-0001", format: "{YYYY}-{SEQ4}" },
@@ -14,7 +14,8 @@ const PRESETS = [
 
 /**
  * 申請番号の採番ルール（管理者）。
- * 書式と連番のリセット単位を決める。既に採番済みの申請の番号は変わらない。
+ * 書式と連番のリセット単位を決める。以後の提出分に適用され、
+ * 既存の申請番号は「振り直す」を実行したときだけ現在のルールに置き換わる。
  */
 export default function ReqNoSettings({
   format,
@@ -30,6 +31,35 @@ export default function ReqNoSettings({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
+  // 既存の申請番号の振り直し（先に確認 → 実行）
+  const [renumbering, setRenumbering] = useState(false);
+  const [plan, setPlan] = useState<{
+    total: number;
+    changed: number;
+    samples: { before: string; after: string }[];
+  } | null>(null);
+  const [renumbered, setRenumbered] = useState("");
+
+  function renumber(dryRun: boolean) {
+    setRenumbering(true);
+    setError("");
+    setRenumbered("");
+    renumberRequestsAction(dryRun)
+      .then((res) => {
+        if (!res.ok) {
+          setError(res.message);
+          return;
+        }
+        if (dryRun) {
+          setPlan(res.data);
+        } else {
+          setPlan(null);
+          setRenumbered(`${res.data.changed.toLocaleString()} 件の申請番号を振り直しました。`);
+          router.refresh();
+        }
+      })
+      .finally(() => setRenumbering(false));
+  }
 
   // 保存前でも結果が分かるように、入力中の書式でプレビューする
   const now = new Date();
@@ -81,7 +111,7 @@ export default function ReqNoSettings({
         <span className="font-mono"> {"{MM}"} </span>（月2桁）
         <span className="font-mono"> {"{SEQ}"} </span>（連番。
         <span className="font-mono">{"{SEQ4}"}</span> のように書くとゼロ埋めの桁数を指定できます）。
-        既に採番済みの申請の番号は変わりません。
+        保存すると以後の提出分に適用されます。既存の申請番号もそろえたい場合は、下の「既存の申請番号を振り直す」を実行してください。
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
@@ -124,6 +154,60 @@ export default function ReqNoSettings({
           保存しました。次に提出される申請から適用されます。
         </div>
       )}
+
+      {/* 既存の申請番号の振り直し（保存したルールを過去分にも適用する） */}
+      <div className="mt-4 rounded-lg border border-[#eeeeee] bg-[#fafafa] p-3">
+        <div className="text-sm font-medium text-[#333333]">既存の申請番号を振り直す</div>
+        <p className="mt-1 text-xs text-[#707070]">
+          提出済みのすべての申請に、保存済みのルールで番号を付け直します。提出日時の古い順に連番を振り、
+          リセット単位ごとに 1 から数え直します。※ 先に書式を保存してから実行してください。
+        </p>
+        {plan && (
+          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            対象 {plan.total.toLocaleString()} 件のうち{" "}
+            <span className="font-bold">{plan.changed.toLocaleString()} 件</span> の番号が変わります。
+            {plan.samples.length > 0 && (
+              <ul className="mt-1 space-y-0.5 font-mono">
+                {plan.samples.map((s, i) => (
+                  <li key={i}>
+                    {s.before} → <span className="font-bold">{s.after}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {renumbered && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+            <CheckCircle2 className="h-4 w-4" />
+            {renumbered}
+          </div>
+        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => renumber(true)}
+            disabled={renumbering}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] hover:bg-[#f7f7f5] disabled:opacity-50"
+          >
+            {renumbering ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            変更内容を確認
+          </button>
+          {plan && plan.changed > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirm(`${plan.changed} 件の申請番号を振り直します。よろしいですか？`)) return;
+                renumber(false);
+              }}
+              disabled={renumbering}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-[#e11d48] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#be123c] disabled:opacity-50"
+            >
+              振り直しを実行
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="mt-3 flex gap-2">
         <button

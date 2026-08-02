@@ -383,12 +383,30 @@ export async function updateDraftRequest(
   await insertLines(companyId, requestId, data.lines);
 }
 
-export async function deleteRequest(companyId: string, requestId: string): Promise<void> {
+/**
+ * 申請の削除。下書き（と差し戻し）のみ削除でき、提出済みは削除できない
+ * （提出済みは「取り下げ」で下書きに戻してから削除する）。
+ * 削除できるのは申請者本人と管理者。
+ */
+export async function deleteRequest(
+  companyId: string,
+  requestId: string,
+  actor: { loginId: string | null; isAdmin: boolean } = { loginId: null, isAdmin: true }
+): Promise<void> {
   await ensureSchema();
   const sql = getSql();
-  await sql`
-    DELETE FROM price_requests
-    WHERE company_id = ${companyId} AND id = ${requestId} AND status IN ('draft', 'rejected')`;
+  const cur = (await sql`
+    SELECT status, applicant_login_id, req_code FROM price_requests
+    WHERE company_id = ${companyId} AND id = ${requestId} LIMIT 1`) as any[];
+  if (cur.length === 0) throw new Error("申請が見つかりません。");
+  const r = cur[0];
+  if (r.status !== "draft" && r.status !== "rejected")
+    throw new Error(
+      "提出済みの申請は削除できません。先に「申請を取り下げる」で下書きに戻してください。"
+    );
+  if (!actor.isAdmin && actor.loginId && r.applicant_login_id && r.applicant_login_id !== actor.loginId)
+    throw new Error("この下書きを削除できるのは、作成した本人と管理者だけです。");
+  await sql`DELETE FROM price_requests WHERE company_id = ${companyId} AND id = ${requestId}`;
 }
 
 /** 申請を提出（draft/rejected → pending）。申請番号を採番する。 */
@@ -449,7 +467,7 @@ export async function submitRequest(
 }
 
 /**
- * 申請の取り下げ（pending / mgr_approved → draft）。
+ * 申請の取り下げ（pending / buyer_approved / mgr_approved → draft）。
  * 申請者本人と管理者が実行でき、下書きに戻して修正・再提出または削除できる。
  * 申請Noは維持する（同じ申請の続きとして扱う）。
  */
@@ -464,7 +482,7 @@ export async function withdrawRequest(
   const rows = await sql`
     UPDATE price_requests SET status = 'draft', updated_at = NOW()
     WHERE company_id = ${companyId} AND id = ${requestId}
-      AND status IN ('pending', 'mgr_approved')
+      AND status IN ('pending', 'buyer_approved', 'mgr_approved')
     RETURNING id`;
   if ((rows as any[]).length === 0)
     throw new Error("取り下げできませんでした（既に承認済みか、下書きに戻っています）。");
@@ -770,6 +788,68 @@ export function formatReqCode(format: string, seq: number, at: Date): string {
     );
 }
 
+/**
+ * 提出済み申請の申請番号を、現在の採番ルールで振り直す。
+ * 運用開始後にルール（書式・リセット単位）を変えた場合、既存の申請番号は
+ * 古い書式のまま残るため、この処理で番号体系をそろえる。
+ *
+ * - 対象は提出済み（下書き以外）の申請。提出日時の古い順に連番を振る
+ * - 連番はリセット単位（年／月／なし）ごとに 1 から数え直す
+ * - `dryRun` なら更新せず、変更予定の件数と例を返す（画面で確認してから実行する）
+ */
+export async function renumberRequests(
+  companyId: string,
+  opts: { dryRun?: boolean } = {}
+): Promise<{
+  total: number;
+  changed: number;
+  samples: { before: string; after: string }[];
+}> {
+  await ensureSchema();
+  const sql = getSql();
+  const wf = await getWfSettings(companyId);
+  const rows = (await sql`
+    SELECT id, req_code, submitted_at, created_at
+    FROM price_requests
+    WHERE company_id = ${companyId} AND status <> 'draft'
+    ORDER BY COALESCE(submitted_at, created_at), created_at, id`) as any[];
+
+  const counters = new Map<string, number>();
+  const updates: { id: string; seq: number; code: string; before: string }[] = [];
+  for (const r of rows) {
+    const at = new Date(r.submitted_at ?? r.created_at);
+    // 連番のリセット単位ごとにカウンタを分ける
+    const bucket =
+      wf.reqReset === "month"
+        ? `${at.getFullYear()}-${at.getMonth() + 1}`
+        : wf.reqReset === "year"
+          ? String(at.getFullYear())
+          : "all";
+    const seq = (counters.get(bucket) ?? 0) + 1;
+    counters.set(bucket, seq);
+    const code = formatReqCode(wf.reqFormat, seq, at);
+    const before = r.req_code ?? "";
+    if (code !== before) updates.push({ id: r.id, seq, code, before });
+  }
+
+  const samples = updates.slice(0, 5).map((u) => ({ before: u.before || "（未採番）", after: u.code }));
+  if (!opts.dryRun && updates.length > 0) {
+    const CHUNK = 500;
+    for (let i = 0; i < updates.length; i += CHUNK) {
+      const c = updates.slice(i, i + CHUNK);
+      await sql`
+        UPDATE price_requests p SET req_seq = s.seq, req_code = s.code, updated_at = NOW()
+        FROM unnest(
+          ${c.map((u) => u.id)}::uuid[],
+          ${c.map((u) => u.seq)}::int[],
+          ${c.map((u) => u.code)}::text[]
+        ) AS s(id, seq, code)
+        WHERE p.company_id = ${companyId} AND p.id = s.id`;
+    }
+  }
+  return { total: rows.length, changed: updates.length, samples };
+}
+
 const WF_DEFAULT: WfSettings = {
   stages: 2,
   mgrApprovers: [],
@@ -960,16 +1040,21 @@ export async function listPrices(
         AND ${opts.buyerLoginId ?? null} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
     AND (NOT ${activeOnly} OR (start_date <= CURRENT_DATE AND (end_date IS NULL OR end_date >= CURRENT_DATE)))`;
   const [rows, cnt] = await Promise.all([
+    // 最新の単価を先頭に、下へ行くほど古くなる並び
     sql`
       SELECT * FROM price_history WHERE ${where}
-      ORDER BY item_cd, supplier_cd, start_date DESC
+      ORDER BY start_date DESC, created_at DESC, item_cd, supplier_cd
       LIMIT ${limit} OFFSET ${offset}`,
     sql`SELECT COUNT(*)::int AS n FROM price_history WHERE ${where}`,
   ]);
   return { rows: (rows as any[]).map(mapHistory), total: Number((cnt as any)[0]?.n ?? 0) };
 }
 
-/** ある品目×取引先の改訂履歴（納入場所別も含めて時系列）。 */
+/**
+ * ある品目×取引先の改訂履歴（納入場所・ロット別も含めて時系列）。
+ * 同じ品目でもロット数が違えば別の単価として登録されるため、
+ * ロットも区切りに含めて（画面側のグループ化キーと合わせて）取得する。
+ */
 export async function priceHistoryFor(
   companyId: string,
   itemCd: string,
@@ -986,7 +1071,8 @@ export async function priceHistoryFor(
         SELECT 1 FROM suppliers sp
         WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
           AND ${buyerLoginId} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
-    ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'), start_date DESC
+    ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'),
+             COALESCE(lot_qty, -1), start_date DESC
     LIMIT 1000`;
   return (rows as any[]).map(mapHistory);
 }
@@ -1262,6 +1348,154 @@ export async function updateItem(
 export async function deleteItem(companyId: string, id: string): Promise<void> {
   const sql = getSql();
   await sql`DELETE FROM items WHERE company_id = ${companyId} AND id = ${id}`;
+}
+
+/* ===== 納入場所マスタ ===== */
+
+export interface LocationRow {
+  id: string;
+  code: string;
+  name: string;
+  notes: string | null;
+  active: boolean;
+  /** この納入場所を使っている単価履歴の件数（削除の可否判断用） */
+  useCount?: number;
+}
+
+export async function listLocations(
+  companyId: string,
+  opts: { q?: string | null; limit?: number; offset?: number; withUsage?: boolean } = {}
+): Promise<{ rows: LocationRow[]; total: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const limit = Math.min(opts.limit ?? 200, 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const q = opts.q ? `%${opts.q}%` : null;
+  const where = sql`
+    company_id = ${companyId}
+    AND (${q}::text IS NULL OR code ILIKE ${q} OR name ILIKE ${q})`;
+  const [rows, cnt] = await Promise.all([
+    sql`
+      SELECT l.*, (
+        SELECT COUNT(*)::int FROM price_history h
+        WHERE h.company_id = l.company_id AND h.loc_cd = l.code
+      ) AS use_count
+      FROM locations l WHERE ${where}
+      ORDER BY code
+      LIMIT ${limit} OFFSET ${offset}`,
+    sql`SELECT COUNT(*)::int AS n FROM locations WHERE ${where}`,
+  ]);
+  return {
+    rows: (rows as any[]).map((r) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name ?? "",
+      notes: r.notes ?? null,
+      active: r.active,
+      useCount: Number(r.use_count ?? 0),
+    })),
+    total: Number((cnt as any)[0]?.n ?? 0),
+  };
+}
+
+/** 納入場所CD → 名称。画面表示でCDに名称を添えるために使う。 */
+export async function locationNameMap(
+  companyId: string,
+  codes: (string | null | undefined)[] = []
+): Promise<Map<string, string>> {
+  await ensureSchema();
+  const sql = getSql();
+  const list = [...new Set(codes.filter((c): c is string => !!c && c !== "*"))];
+  if (list.length === 0) return new Map();
+  const rows = await sql`
+    SELECT code, name FROM locations
+    WHERE company_id = ${companyId} AND code = ANY(${list}::text[]) AND name <> ''`;
+  return new Map((rows as any[]).map((r) => [r.code as string, r.name as string]));
+}
+
+export async function upsertLocation(
+  companyId: string,
+  loc: { code: string; name: string; notes?: string | null }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const code = loc.code.trim();
+  if (!code) throw new Error("納入場所CDを入力してください。");
+  await sql`
+    INSERT INTO locations (company_id, code, name, notes)
+    VALUES (${companyId}, ${code}, ${loc.name.trim()}, ${loc.notes ?? null})
+    ON CONFLICT (company_id, code) DO UPDATE SET
+      name = EXCLUDED.name,
+      notes = COALESCE(EXCLUDED.notes, locations.notes),
+      active = true,
+      updated_at = NOW()`;
+}
+
+/** 納入場所の編集（CDはキーのため変更しない）。 */
+export async function updateLocation(
+  companyId: string,
+  id: string,
+  loc: { name: string; notes?: string | null; active: boolean }
+): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    UPDATE locations SET
+      name = ${loc.name.trim()},
+      notes = ${loc.notes ?? null},
+      active = ${loc.active},
+      updated_at = NOW()
+    WHERE company_id = ${companyId} AND id = ${id}
+    RETURNING id`;
+  if ((rows as any[]).length === 0) throw new Error("納入場所が見つかりません。");
+}
+
+export async function deleteLocation(companyId: string, id: string): Promise<void> {
+  await ensureSchema();
+  const sql = getSql();
+  await sql`DELETE FROM locations WHERE company_id = ${companyId} AND id = ${id}`;
+}
+
+/**
+ * 納入場所の一括登録。
+ * 取込（納入場所マスタ・移行データ・単価改訂履歴）から共通で使う。
+ * 名称が空の行は既存の名称を消さない（CDだけの行で上書きしないため）。
+ */
+export async function upsertLocationsBatch(
+  companyId: string,
+  locs: { code: string; name: string }[]
+): Promise<{ created: number; updated: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const dedup = new Map<string, string>();
+  for (const l of locs) {
+    // 全角CD（Ｍ25 等）は半角に正規化して重複登録を防ぐ
+    const code = (l.code ?? "").trim().normalize("NFKC");
+    if (!code || code === "*") continue;
+    const name = (l.name ?? "").trim();
+    // 同一CDが複数回出てきた場合は、名称のある方を採用する
+    if (!dedup.has(code) || (name && !dedup.get(code))) dedup.set(code, name);
+  }
+  const rows = [...dedup.entries()];
+  let created = 0;
+  let updated = 0;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const res = (await sql`
+      INSERT INTO locations (company_id, code, name)
+      SELECT ${companyId}::uuid, * FROM unnest(
+        ${chunk.map((r) => r[0])}::text[], ${chunk.map((r) => r[1])}::text[])
+      ON CONFLICT (company_id, code) DO UPDATE SET
+        name = COALESCE(NULLIF(EXCLUDED.name, ''), locations.name),
+        updated_at = NOW()
+      RETURNING (xmax = 0) AS inserted`) as any[];
+    for (const r of res) {
+      if (r.inserted) created++;
+      else updated++;
+    }
+  }
+  return { created, updated };
 }
 
 export async function listSuppliers(
@@ -2109,6 +2343,9 @@ export interface HistoryReasonInput {
   supplierCd: string;
   supplierName: string | null;
   locCd: string | null;
+  locName?: string | null;
+  /** ロット数。同じ品目×取引先×適用日でもロット違いで別行になるため照合に使う */
+  lotQty?: number | null;
   startDate: string;
   reason: string | null;
   bdMaterial: number | null;
@@ -2122,8 +2359,15 @@ export interface HistoryReasonInput {
 /**
  * 単価改訂履歴の理由・内訳を既存の単価履歴に反映する（初期データ移行の補完）。
  * mcframe の単価情報には改訂理由も品名も含まれないため、改訂履歴のエクスポートで後から埋める。
- * 品目CD・取引先CD・納入場所CD・適用開始日で既存行を特定して更新する（新規行は作らない）。
- * 品名・取引先名は、移行で作られた名称なしのマスタ（スタブ）にも書き込む。
+ * 新規行は作らず、既存行を特定して更新する。
+ *
+ * 照合キーは 品目CD・取引先CD・適用開始日 を必須とし、そのうえで
+ * 納入場所CD・ロット数の一致度が高い行を優先する（同じ品目・取引先・適用日でも
+ * **ロット違い**で複数行が登録されているため、ロットまで見ないと別ロットの理由が付いてしまう）。
+ * - 改訂履歴に納入場所CDがある行は、その納入場所の単価履歴だけに反映する
+ * - 改訂履歴にロットがある行は、ロットの一致する単価履歴を優先する
+ *   （どちらかにロットが無い場合は一致度を下げて候補には残す）
+ * 1つの単価履歴に複数の改訂履歴が該当する場合は、一致度が最も高い1件だけを反映する。
  */
 export async function applyHistoryReasons(
   companyId: string,
@@ -2135,14 +2379,17 @@ export async function applyHistoryReasons(
   let updated = 0;
   let itemNames = 0;
   let supplierNames = 0;
+  const matchedKeys = new Set<string>();
   for (let i = 0; i < rows.length; i += CHUNK) {
     const c = rows.slice(i, i + CHUNK);
     const src = sql`unnest(
+        ${c.map((_, k) => i + k)}::int[],
         ${c.map((r) => r.itemCd)}::text[],
         ${c.map((r) => r.itemName ?? "")}::text[],
         ${c.map((r) => r.supplierCd)}::text[],
         ${c.map((r) => r.supplierName ?? "")}::text[],
         ${c.map((r) => r.locCd ?? "")}::text[],
+        ${c.map((r) => r.lotQty ?? null)}::double precision[],
         ${c.map((r) => r.startDate)}::date[],
         ${c.map((r) => r.reason ?? "")}::text[],
         ${c.map((r) => r.bdMaterial)}::numeric[],
@@ -2151,9 +2398,31 @@ export async function applyHistoryReasons(
         ${c.map((r) => r.bdForex)}::numeric[],
         ${c.map((r) => r.bdOther)}::numeric[],
         ${c.map((r) => r.applicantName ?? "")}::text[]
-      ) AS s(item_cd, item_name, supplier_cd, supplier_name, loc_cd, start_date, reason,
+      ) AS s(idx, item_cd, item_name, supplier_cd, supplier_name, loc_cd, lot_qty, start_date, reason,
              bd_material, bd_revision, bd_design, bd_forex, bd_other, applicant_name)`;
+    // 候補（品目×取引先×適用日）を一致度で採点し、履歴1行につき最良の1件だけを採用する
     const res = (await sql`
+      WITH cand AS (
+        SELECT h.id AS hid, s.*,
+          (CASE WHEN s.lot_qty IS NOT NULL AND h.lot_qty IS NOT NULL
+                  AND abs(h.lot_qty - s.lot_qty) < 0.000001 THEN 4 ELSE 0 END)
+        + (CASE WHEN NULLIF(s.loc_cd, '') IS NOT NULL THEN 2 ELSE 0 END)
+        + (CASE WHEN NULLIF(s.loc_cd, '') IS NULL AND COALESCE(h.loc_cd, '') = '' THEN 1 ELSE 0 END)
+          AS score
+        FROM price_history h
+        JOIN ${src} ON h.item_cd = s.item_cd
+                   AND h.supplier_cd = s.supplier_cd
+                   AND h.start_date = s.start_date
+        WHERE h.company_id = ${companyId}
+          -- 納入場所CDが指定されている行は、その納入場所の履歴にだけ反映する
+          AND (NULLIF(s.loc_cd, '') IS NULL OR COALESCE(h.loc_cd, '') = s.loc_cd)
+          -- 双方にロットがあるのに違う場合は別ロットの単価なので対象外
+          AND (s.lot_qty IS NULL OR h.lot_qty IS NULL
+               OR abs(h.lot_qty - s.lot_qty) < 0.000001)
+      ),
+      best AS (
+        SELECT DISTINCT ON (hid) * FROM cand ORDER BY hid, score DESC, idx
+      )
       UPDATE price_history h SET
         reason = COALESCE(NULLIF(s.reason, ''), h.reason),
         bd_material = COALESCE(s.bd_material, h.bd_material),
@@ -2164,14 +2433,11 @@ export async function applyHistoryReasons(
         applicant_name = COALESCE(NULLIF(s.applicant_name, ''), h.applicant_name),
         item_name = COALESCE(NULLIF(h.item_name, ''), NULLIF(s.item_name, '')),
         supplier_name = COALESCE(NULLIF(h.supplier_name, ''), NULLIF(s.supplier_name, ''))
-      FROM ${src}
-      WHERE h.company_id = ${companyId}
-        AND h.item_cd = s.item_cd
-        AND h.supplier_cd = s.supplier_cd
-        AND COALESCE(h.loc_cd, '*') = COALESCE(NULLIF(s.loc_cd, ''), '*')
-        AND h.start_date = s.start_date
-      RETURNING h.id`) as any[];
+      FROM best s
+      WHERE h.id = s.hid
+      RETURNING h.id, s.idx`) as any[];
     updated += res.length;
+    for (const r of res) matchedKeys.add(String(r.idx));
 
     // 移行で作られた名称なしのマスタ（スタブ）にも品名・取引先名を入れる
     const n1 = (await sql`
@@ -2189,7 +2455,18 @@ export async function applyHistoryReasons(
       RETURNING sp.id`) as any[];
     supplierNames += n2.length;
   }
-  return { updated, unmatched: Math.max(0, rows.length - updated), itemNames, supplierNames };
+  // 改訂履歴に納入場所CD・名称があれば、納入場所マスタにも登録する
+  const locs = rows
+    .filter((r) => r.locCd && r.locCd !== "*")
+    .map((r) => ({ code: r.locCd as string, name: r.locName ?? "" }));
+  if (locs.length > 0) await upsertLocationsBatch(companyId, locs);
+  // 反映できなかったのは「単価履歴に該当行が無かった改訂履歴」の件数
+  return {
+    updated,
+    unmatched: Math.max(0, rows.length - matchedKeys.size),
+    itemNames,
+    supplierNames,
+  };
 }
 
 /** 申請に含まれる取引先CDの一覧（添付の閲覧権限チェック用） */

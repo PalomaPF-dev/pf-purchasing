@@ -76,6 +76,23 @@ async function buildSchema(): Promise<void> {
   await safeDdl(() => sql`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS chaser_login_id TEXT`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS suppliers_chaser_idx ON suppliers(company_id, chaser_login_id)`);
 
+  // 納入場所マスタ（納入場所CD → 名称）。
+  // 単価は品目×取引先×納入場所ごとに登録されるため、CDだけでは分かりにくい画面表示を
+  // 名称で補う。移行データ・単価改訂履歴の取込時にも自動で登録する。
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS locations (
+      id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      code       TEXT NOT NULL,
+      name       TEXT NOT NULL DEFAULT '',
+      notes      TEXT,
+      active     BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (company_id, code)
+    )`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS locations_company_idx ON locations(company_id)`);
+
   // 社員マスタ（社員一覧）。アプリのユーザー登録の元になる。
   // wf_role: 'mgr' | 'dept' | null（承認W/Fの段階）。role: 'admin' | 'member'
   await safeDdl(() => sql`

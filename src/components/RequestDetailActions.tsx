@@ -35,18 +35,27 @@ export function SubmitDeleteActions({ requestId }: { requestId: string }) {
       </button>
       <button
         onClick={() => {
-          if (!confirm("この申請を削除しますか？（元に戻せません）")) return;
+          if (!confirm("この下書きを削除しますか？（明細ごと削除され、元に戻せません）")) return;
           setBusy(true);
-          deleteRequestAction(requestId).catch((e) => {
-            setError(e instanceof Error ? e.message : "削除に失敗しました");
-            setBusy(false);
-          });
+          setError("");
+          deleteRequestAction(requestId)
+            .then((r) => {
+              if (r.ok) router.push("/requests");
+              else {
+                setError(r.message);
+                setBusy(false);
+              }
+            })
+            .catch((e) => {
+              setError(e instanceof Error ? e.message : "削除に失敗しました");
+              setBusy(false);
+            });
         }}
         disabled={busy}
         className="inline-flex items-center gap-2 rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
       >
         <Trash2 className="h-4 w-4" />
-        削除
+        下書きを削除
       </button>
       {error && <span className="text-sm text-red-600">{error}</span>}
     </div>
