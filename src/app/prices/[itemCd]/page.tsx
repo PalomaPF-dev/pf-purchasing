@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Paperclip } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { filesForHistoryRows, priceHistoryFor, requestLineDetail } from "@/lib/db";
+import { filesForHistoryRows, locationNameMap, priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
 import type { PriceHistoryRow } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
@@ -74,14 +74,24 @@ export default async function PriceHistoryPage({
     rows.map((r) => r.requestLineId).filter((v): v is string => !!v)
   );
 
-  // 取引先×納入場所×納品先ごとにグループ化して時系列表示
+  // 納入場所CDに名称を添える
+  const locNames = await locationNameMap(session.companyId, rows.map((r) => r.locCd));
+
+  // 取引先×納入場所×納品先×ロットごとにグループ化して時系列表示。
+  // 同じ品目でもロット数が違えば別の単価として登録されるため、ロットも区切りに含める
+  // （混ぜると「改訂前単価」が別ロットの単価になってしまう）。
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
-    const key = `${r.supplierCd}｜${r.supplierName ?? ""}｜${r.locCd ?? "*"}｜${r.dlvCd ?? "*"}`;
+    const key = `${r.supplierCd}｜${r.supplierName ?? ""}｜${r.locCd ?? "*"}｜${r.dlvCd ?? "*"}｜${r.lotQty ?? ""}`;
     const arr = groups.get(key) ?? [];
     arr.push(r);
     groups.set(key, arr);
   }
+  // 各グループ内は新しい順。グループ自体も最新の適用日が新しい順に並べる
+  for (const list of groups.values()) list.sort((a, b) => (a.startDate < b.startDate ? 1 : -1));
+  const sortedGroups = [...groups.entries()].sort((a, b) =>
+    (a[1][0]?.startDate ?? "") < (b[1][0]?.startDate ?? "") ? 1 : -1
+  );
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6">
@@ -103,17 +113,26 @@ export default async function PriceHistoryPage({
         </div>
       ) : (
         <div className="space-y-6">
-          {[...groups.entries()].map(([key, list]) => {
-            const [supplierCd, supplierName, locCd, dlvCd] = key.split("｜");
+          {sortedGroups.map(([key, list]) => {
+            const [supplierCd, supplierName, locCd, dlvCd, lot] = key.split("｜");
             return (
               <section key={key} className="rounded-xl border border-[#e5e5e5] bg-white">
                 <div className="border-b border-[#eeeeee] px-4 py-3 text-sm font-bold text-[#333333]">
                   取引先 <span className="font-mono">{supplierCd}</span> {supplierName}
                   {locCd !== "*" && (
-                    <span className="ml-3 text-xs font-normal text-[#707070]">納入場所: {locCd}</span>
+                    <span className="ml-3 text-xs font-normal text-[#707070]">
+                      納入場所: {locCd}
+                      {locNames.get(locCd) ? ` ${locNames.get(locCd)}` : ""}
+                    </span>
                   )}
                   {dlvCd !== "*" && (
                     <span className="ml-3 text-xs font-normal text-[#707070]">納品先: {dlvCd}</span>
+                  )}
+                  {/* ロット違いは別単価。どのロットの履歴かを明示する */}
+                  {lot && (
+                    <span className="ml-3 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-600">
+                      ロット {Number(lot).toLocaleString()}
+                    </span>
                   )}
                 </div>
                 <div className="overflow-x-auto">

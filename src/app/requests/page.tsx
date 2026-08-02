@@ -6,6 +6,7 @@ import { REQUEST_STATUS_LABEL, type RequestStatus } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ReqNoSettings from "@/components/ReqNoSettings";
+import DeleteDraftButton from "@/components/DeleteDraftButton";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function RequestsPage({
   const mine = sp.mine === "1";
   const q = sp.q ?? "";
 
+  const isAdmin = session.role === "admin";
   // 一般（バイヤー）は自分の担当取引先を含む申請のみ
   const scope = supplierScopeOf(session);
   const [requests, wf] = await Promise.all([
@@ -122,6 +124,7 @@ export default async function RequestsPage({
                 <th className="px-2 py-2.5 font-medium">申請者</th>
                 <th className="px-2 py-2.5 font-medium">提出日時</th>
                 <th className="px-2 py-2.5 font-medium">状態</th>
+                <th className="px-2 py-2.5 font-medium"></th>
               </tr>
             </thead>
             <tbody>
@@ -142,6 +145,16 @@ export default async function RequestsPage({
                   <td className="px-2 py-2.5 text-xs">{formatDateTime(r.submittedAt ?? r.createdAt)}</td>
                   <td className="px-2 py-2.5">
                     <StatusBadge status={r.status} />
+                  </td>
+                  {/* 下書き・差し戻しは一覧からそのまま削除できる（本人と管理者のみ） */}
+                  <td className="px-2 py-2.5 text-right">
+                    {(r.status === "draft" || r.status === "rejected") &&
+                      (isAdmin || r.applicantLoginId === session.loginId) && (
+                        <DeleteDraftButton
+                          requestId={r.id}
+                          label={r.reqCode ?? r.title ?? "この下書き"}
+                        />
+                      )}
                   </td>
                 </tr>
               ))}

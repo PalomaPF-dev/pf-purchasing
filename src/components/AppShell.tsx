@@ -9,6 +9,7 @@ import {
   History,
   Package,
   Building2,
+  MapPin,
   Users,
   Download,
   DatabaseZap,
@@ -39,6 +40,7 @@ const NAV: NavGroup[] = [
       // 一般（バイヤー・チェイサー）は自分の担当取引先のみ閲覧できる
       { href: "/suppliers", label: "取引先マスタ", icon: Building2 },
       { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
+      { href: "/locations", label: "納入場所マスタ", icon: MapPin, adminOnly: true },
       { href: "/employees", label: "ユーザー登録", icon: Users, adminOnly: true },
       // 運用開始時の1回限りの作業（日常運用では使わない）
       { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },

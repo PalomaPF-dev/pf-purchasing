@@ -6,7 +6,13 @@ import { Download, FileUp, Loader2 } from "lucide-react";
 import { parseCsv } from "@/lib/csv";
 import { mergeItemRows } from "@/lib/itemImport";
 
-export type ImportKind = "prices" | "items" | "suppliers" | "supplier-contacts" | "history-reasons";
+export type ImportKind =
+  | "prices"
+  | "items"
+  | "suppliers"
+  | "supplier-contacts"
+  | "history-reasons"
+  | "locations";
 type Kind = ImportKind;
 
 const KIND_INFO: Record<Kind, { label: string; note: string }> = {
@@ -24,7 +30,11 @@ const KIND_INFO: Record<Kind, { label: string; note: string }> = {
   },
   "history-reasons": {
     label: "単価改訂履歴の理由",
-    note: "mcframe の単価改訂履歴（理由つき）を取り込み、既に移行済みの単価履歴に「備考（改訂理由）」と単価差の内訳（材料建値・単価改定・設計変更・為替変動・その他）を反映します。ファイルに品名・取引先名があれば、移行で名称が空のままの品番マスタ・取引先マスタにも補完します。品目CD・取引先CD・納入場所CD・開始日が一致する履歴を更新するだけで、新しい履歴は作りません。",
+    note: "mcframe の単価改訂履歴（理由つき）を取り込み、既に移行済みの単価履歴に「備考（改訂理由）」と単価差の内訳（材料建値・単価改定・設計変更・為替変動・その他）を反映します。品目CD・取引先CD・開始日で照合し、同じ日に複数の単価がある場合は納入場所CD・ロットの一致する履歴に反映します（ロット違いの単価を取り違えません）。ファイルに品名・取引先名・納入場所名があれば、名称が空のままの品番マスタ・取引先マスタ・納入場所マスタにも補完します。既存の履歴を更新するだけで、新しい履歴は作りません。",
+  },
+  locations: {
+    label: "納入場所マスタの一括登録",
+    note: "「納入場所CD／納入場所名」の一覧を取り込みます。納入場所CDが同じ既存データは名称を上書きします。mcframe の単価情報エクスポート（納入場所CD・納入場所名の列があるもの）をそのまま指定しても取り込めます。",
   },
   "supplier-contacts": {
     label: "取引先の担当窓口",
@@ -114,7 +124,7 @@ export default function ImportForm({ kinds }: { kinds: ImportKind[] }) {
             : "";
         setResult(`${data.count} 件の単価履歴に改訂理由・内訳を反映しました。${names}`);
         router.refresh();
-      } else if (kind === "supplier-contacts") {
+      } else if (kind === "supplier-contacts" || kind === "locations") {
         setResult(
           `${data.count} 件を取り込みました（新規 ${data.created ?? 0} 件 / 更新 ${data.updated ?? 0} 件）。`
         );

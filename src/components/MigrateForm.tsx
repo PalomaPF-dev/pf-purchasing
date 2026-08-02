@@ -25,6 +25,7 @@ const COL_ALIASES: Record<string, string[]> = {
   lot_qty: ["ロット数", "qty"],
   currency: ["通貨ＣＤ", "通貨CD", "cur_cd"],
   loc_cd: ["納入場所ＣＤ", "納入場所CD", "loc_cd"],
+  loc_name: ["納入場所名", "納入場所", "loc_nm"],
   dlv_cd: ["納品先ＣＤ", "納品先CD", "dlv_cd"],
   wg_cd: ["ワーキンググループＣＤ", "ワーキンググループCD", "wg_cd"],
   start_date: ["適用開始日", "st_dt"],
@@ -149,6 +150,8 @@ export default function MigrateForm({
           lot_qty: get(r, "lot_qty"),
           currency: get(r, "currency"),
           loc_cd: get(r, "loc_cd"),
+          // 納入場所名は履歴には持たないが、納入場所マスタの登録に使う
+          loc_name: get(r, "loc_name"),
           dlv_cd: get(r, "dlv_cd"),
           wg_cd: get(r, "wg_cd"),
           start_date: get(r, "start_date"),

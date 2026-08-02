@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionWithRole } from "@/lib/session";
-import { insertHistoryBatch, type MigrationRow } from "@/lib/db";
+import { insertHistoryBatch, upsertLocationsBatch, type MigrationRow } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -82,8 +82,16 @@ export async function POST(req: Request) {
     });
   }
 
+  // 納入場所CD・名称があれば納入場所マスタにも登録しておく（画面でCDに名称を添えるため）
+  const locs: { code: string; name: string }[] = [];
+  for (const r of raw as Array<Record<string, unknown>>) {
+    const code = s(r.loc_cd);
+    if (code) locs.push({ code, name: s(r.loc_name) ?? "" });
+  }
+
   try {
     const inserted = await insertHistoryBatch(session.companyId, rows);
+    if (locs.length > 0) await upsertLocationsBatch(session.companyId, locs);
     return NextResponse.json({
       inserted,
       skipped: rows.length - inserted,

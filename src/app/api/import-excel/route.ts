@@ -7,6 +7,7 @@ import {
   upsertSupplier,
   employeeNameMap,
   applyHistoryReasons,
+  upsertLocationsBatch,
   setSupplierContacts,
   splitContactNames,
   normalizeName,
@@ -37,15 +38,17 @@ const ITEM_HEADERS = ITEM_IMPORT_HEADERS;
 const SUPPLIER_HEADERS = ["取引先CD", "取引先名", "担当バイヤー社員番号", "備考"];
 const CONTACT_HEADERS = ["取引先CD", "取引先名", "企画グループ", "管理グループ"];
 const REASON_HEADERS = [
-  "取引先CD", "取引先名", "品目CD", "品名", "開始日", "納入場所CD",
+  "取引先CD", "取引先名", "品目CD", "品名", "開始日", "ロット", "納入場所CD", "納入場所",
   "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考", "出力社員名",
 ];
+const LOCATION_HEADERS = ["納入場所CD", "納入場所名", "備考"];
 
 const TEMPLATES: Record<string, { headers: string[]; name: string }> = {
   items: { headers: ITEM_HEADERS, name: "品番マスタ取込" },
   suppliers: { headers: SUPPLIER_HEADERS, name: "取引先マスタ取込" },
   "supplier-contacts": { headers: CONTACT_HEADERS, name: "取引先担当窓口取込" },
   "history-reasons": { headers: REASON_HEADERS, name: "単価改訂履歴の理由取込" },
+  locations: { headers: LOCATION_HEADERS, name: "納入場所マスタ取込" },
   prices: { headers: PRICE_HEADERS, name: "単価申請取込" },
 };
 
@@ -205,6 +208,7 @@ export async function POST(req: Request) {
     items: ["品目CD"],
     suppliers: ["取引先CD", "発注先CD"],
     "supplier-contacts": ["取引先CD", "発注先CD"],
+    locations: ["納入場所CD", "納入場所ＣＤ"],
     prices: ["品目CD"],
   };
 
@@ -315,6 +319,39 @@ export async function POST(req: Request) {
       });
     }
 
+    if (kind === "locations") {
+      if (!hasCol("納入場所CD", "納入場所ＣＤ")) {
+        return NextResponse.json(
+          { error: "ヘッダに「納入場所CD」が必要です。テンプレートをご利用ください。" },
+          { status: 422 }
+        );
+      }
+      // mcframe の単価情報エクスポート（loc_nm 列）もそのまま取り込めるようにする。
+      // 全角CD（Ｍ25 等）は半角に正規化して、単価履歴側のCDと揃える
+      const payload = dataRows
+        .map((r) => ({
+          code: get(r, "納入場所CD", "納入場所ＣＤ", "loc_cd").normalize("NFKC"),
+          name: get(r, "納入場所名", "納入場所", "loc_nm"),
+        }))
+        .filter((r) => r.code && r.code !== "*");
+      if (payload.length === 0) {
+        return NextResponse.json({ error: "取込できる行がありません。" }, { status: 422 });
+      }
+      const res = await upsertLocationsBatch(session.companyId, payload);
+      const named = payload.filter((r) => r.name).length;
+      return NextResponse.json({
+        ok: true,
+        kind,
+        count: res.created + res.updated,
+        created: res.created,
+        updated: res.updated,
+        errors:
+          named === 0
+            ? ["名称の列（納入場所名）が見つからないため、CDのみ登録しました。"]
+            : [],
+      });
+    }
+
     if (kind === "history-reasons") {
       if (!h.has("品目CD") || !hasCol("取引先CD", "発注先CD") || !h.has("開始日")) {
         return NextResponse.json(
@@ -328,7 +365,11 @@ export async function POST(req: Request) {
           itemName: get(r, "品名") || null,
           supplierCd: get(r, "取引先CD", "発注先CD"),
           supplierName: get(r, "取引先名") || null,
-          locCd: get(r, "納入場所CD") || null,
+          // 実データには全角の納入場所CD（Ｍ25 等）が混ざるため半角に正規化して照合する
+          locCd: get(r, "納入場所CD", "納入場所ＣＤ").normalize("NFKC") || null,
+          locName: get(r, "納入場所名", "納入場所") || null,
+          // ロット違いで別行になっている単価を取り違えないための照合キー。0 は未指定扱い
+          lotQty: toNum(get(r, "ロット", "ロット数")) || null,
           startDate: normDate(get(r, "開始日")),
           reason: get(r, "備考") || null,
           bdMaterial: toNum(get(r, "材料建値")),
@@ -361,7 +402,7 @@ export async function POST(req: Request) {
         supplierNames: res.supplierNames,
         errors:
           res.unmatched > 0
-            ? [`単価履歴に一致しなかった行が ${res.unmatched.toLocaleString()} 件あります（品目CD・取引先CD・納入場所CD・開始日で照合）`]
+            ? [`単価履歴に一致しなかった行が ${res.unmatched.toLocaleString()} 件あります（品目CD・取引先CD・開始日で照合し、納入場所CD・ロットの一致する履歴を優先）`]
             : [],
       });
     }

@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import { requireSession, requireAdminSession, supplierScopeOf } from "./session";
 import {
   addRequestMessage,
@@ -28,6 +27,10 @@ import {
   updateEmployee,
   deleteEmployee,
   syncUsersFromEmployees,
+  upsertLocation,
+  updateLocation,
+  deleteLocation,
+  renumberRequests,
 } from "./db";
 import type { ApprovalStage, LineInput } from "./types";
 
@@ -170,11 +173,74 @@ export async function cancelApprovalAction(
   });
 }
 
-export async function deleteRequestAction(requestId: string): Promise<void> {
+/**
+ * 下書き（差し戻し含む）の削除。
+ * 削除できるのは作成した本人と管理者。成功したら一覧へ戻る。
+ * 提出済みは削除できない（取り下げて下書きに戻してから削除する）。
+ */
+export async function deleteRequestAction(requestId: string): Promise<ActionResult> {
   const s = await requireSession();
-  await deleteRequest(s.companyId, requestId);
-  revalidatePath("/requests");
-  redirect("/requests");
+  const r = await run(async () => {
+    await deleteRequest(s.companyId, requestId, {
+      loginId: s.loginId,
+      isAdmin: s.role === "admin",
+    });
+    revalidatePath("/requests");
+    revalidatePath(`/requests/${requestId}`);
+  });
+  return r;
+}
+
+/** 既存の申請番号を、現在の採番ルールで振り直す（管理者のみ）。 */
+export async function renumberRequestsAction(
+  dryRun: boolean
+): Promise<ActionResult<{ total: number; changed: number; samples: { before: string; after: string }[] }>> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    const res = await renumberRequests(s.companyId, { dryRun });
+    if (!dryRun) {
+      revalidatePath("/requests");
+      revalidatePath("/approvals");
+    }
+    return res;
+  });
+}
+
+/* ===== 納入場所マスタ ===== */
+
+/** 納入場所の追加・更新（同じCDを登録すると上書き）。 */
+export async function upsertLocationAction(formData: FormData): Promise<void> {
+  const s = await requireAdminSession();
+  const code = String(formData.get("code") ?? "").trim();
+  if (!code) throw new Error("納入場所CDは必須です");
+  await upsertLocation(s.companyId, {
+    code,
+    name: String(formData.get("name") ?? "").trim(),
+    notes: String(formData.get("notes") ?? "").trim() || null,
+  });
+  revalidatePath("/locations");
+  revalidatePath("/prices");
+}
+
+export async function updateLocationAction(
+  id: string,
+  name: string,
+  notes: string,
+  active: boolean
+): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    await updateLocation(s.companyId, id, { name, notes: notes.trim() || null, active });
+    revalidatePath("/locations");
+  });
+}
+
+export async function deleteLocationAction(id: string): Promise<ActionResult> {
+  return run(async () => {
+    const s = await requireAdminSession();
+    await deleteLocation(s.companyId, id);
+    revalidatePath("/locations");
+  });
 }
 
 /** 承認（管理者のみ）。stage は現在の申請状態と一致している必要がある。 */
