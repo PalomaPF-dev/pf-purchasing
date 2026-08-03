@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Search, X } from "lucide-react";
+import { PRICE_FACTORS } from "@/lib/db";
 
 /**
  * 単価履歴の項目別検索。
@@ -8,19 +9,26 @@ import { Search, X } from "lucide-react";
  */
 export default function PriceFilters({
   values,
+  period,
   q,
   activeOnly,
   sort,
   dir,
 }: {
   values: { itemQ: string; itemNameQ: string; supplierQ: string; locQ: string; reasonQ: string };
+  /** 適用期間の絞り込み */
+  period: { from: string; to: string; mode: string; factor: string };
   /** まとめ検索の語（この絞り込みと併用する） */
   q: string;
   activeOnly: boolean;
   sort: string;
   dir: string;
 }) {
-  const has = Object.values(values).some((v) => v !== "");
+  const has =
+    Object.values(values).some((v) => v !== "") ||
+    period.from !== "" ||
+    period.to !== "" ||
+    period.factor !== "";
   const input =
     "w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none";
   const fields: { name: keyof typeof values; label: string; placeholder: string; mono?: boolean }[] =
@@ -56,6 +64,36 @@ export default function PriceFilters({
           </div>
         ))}
       </div>
+      {/* 適用期間と単価差の要因での抽出 */}
+      <div className="mt-3 grid gap-2 sm:grid-cols-5">
+        <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">適用期間（自）</label>
+          <input type="date" name="from" defaultValue={period.from} className={input} />
+        </div>
+        <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">適用期間（至）</label>
+          <input type="date" name="to" defaultValue={period.to} className={input} />
+        </div>
+        <div>
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">期間の見方</label>
+          <select name="period" defaultValue={period.mode} className={input}>
+            <option value="start">この期間に改訂（適用開始）</option>
+            <option value="overlap">この期間に適用されていた</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">単価差の要因</label>
+          <select name="factor" defaultValue={period.factor} className={input}>
+            <option value="">すべて</option>
+            {PRICE_FACTORS.map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="submit"
@@ -82,7 +120,7 @@ export default function PriceFilters({
           </Link>
         )}
         <span className="text-xs text-[#a0a0a0]">
-          複数の項目を入れると、すべてに当てはまるものを表示します。
+          複数の項目を入れると、すべてに当てはまるものを表示します。要因は、その項目に金額が入っている改訂だけを抽出します。
         </span>
       </div>
     </form>

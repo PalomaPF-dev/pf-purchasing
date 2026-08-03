@@ -1063,6 +1063,18 @@ export type PriceSort =
 
 export type SortDir = "asc" | "desc";
 
+/** 単価差の要因（内訳の項目）。抽出条件に使う */
+export const PRICE_FACTORS = [
+  ["supplyMat", "支給材建値", "bd_supply_mat"],
+  ["material", "材料建値", "bd_material"],
+  ["revision", "単価改定", "bd_revision"],
+  ["design", "設計変更", "bd_design"],
+  ["forex", "為替変動", "bd_forex"],
+  ["other", "その他", "bd_other"],
+] as const;
+
+export type PriceFactor = (typeof PRICE_FACTORS)[number][0];
+
 /** 既定は「最新の適用日が先頭」 */
 export const PRICE_SORT_DEFAULT: PriceSort = "startDate";
 
@@ -1077,6 +1089,17 @@ export async function listPrices(
     supplierQ?: string | null;
     locQ?: string | null;
     reasonQ?: string | null;
+    /** 適用期間での絞り込み（YYYY-MM-DD） */
+    from?: string | null;
+    to?: string | null;
+    /**
+     * 期間の見方。
+     * "start"（既定）… 適用開始日（＝改訂日）が範囲内のもの
+     * "overlap"      … その期間に適用されていたもの（期間が重なるもの）
+     */
+    period?: "start" | "overlap" | null;
+    /** 単価差の要因で絞り込む（その要因に金額が入っている履歴だけ） */
+    factor?: PriceFactor | null;
     supplierCd?: string | null;
     /** 指定時、その担当バイヤーの取引先の履歴のみ返す */
     buyerLoginId?: string | null;
@@ -1099,6 +1122,9 @@ export async function listPrices(
   const locQ = like(opts.locQ);
   const reasonQ = like(opts.reasonQ);
   const activeOnly = opts.activeOnly ?? false;
+  const from = opts.from?.trim() || null;
+  const to = opts.to?.trim() || null;
+  const period = opts.period === "overlap" ? "overlap" : "start";
 
   // 検索はマスタの名称も対象にする（移行データは品名・取引先名が空のことがあるため）。
   // 21万行にマスタを結合してから絞り込むと重いので、先にマスタ側で名称に一致する
@@ -1139,6 +1165,19 @@ export async function listPrices(
       : null,
     locQ ? sql`AND (h.loc_cd ILIKE ${locQ} OR h.loc_cd = ANY(${lLocs}::text[]))` : null,
     reasonQ ? sql`AND h.reason ILIKE ${reasonQ}` : null,
+    // 期間: 改訂（適用開始）日で見るか、その期間に適用されていたかで見るか
+    period === "overlap"
+      ? sql`AND (${to}::date IS NULL OR h.start_date <= ${to}::date)
+            AND (${from}::date IS NULL OR h.end_date IS NULL OR h.end_date >= ${from}::date)`
+      : sql`AND (${from}::date IS NULL OR h.start_date >= ${from}::date)
+            AND (${to}::date IS NULL OR h.start_date <= ${to}::date)`,
+    // 単価差の要因（その項目に金額が入っている履歴だけ）
+    opts.factor === "supplyMat" ? sql`AND COALESCE(h.bd_supply_mat, 0) <> 0` : null,
+    opts.factor === "material" ? sql`AND COALESCE(h.bd_material, 0) <> 0` : null,
+    opts.factor === "revision" ? sql`AND COALESCE(h.bd_revision, 0) <> 0` : null,
+    opts.factor === "design" ? sql`AND COALESCE(h.bd_design, 0) <> 0` : null,
+    opts.factor === "forex" ? sql`AND COALESCE(h.bd_forex, 0) <> 0` : null,
+    opts.factor === "other" ? sql`AND COALESCE(h.bd_other, 0) <> 0` : null,
   ].filter((c): c is NonNullable<typeof c> => c != null);
   // 断片を1つにまとめる（空でも動くように種を置く）
   let searchCond = sql``;
