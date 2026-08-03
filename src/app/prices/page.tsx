@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { listPrices, locationNameMap } from "@/lib/db";
+import { listPrices } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 
@@ -29,8 +29,6 @@ export default async function PricesPage({
     offset: (page - 1) * PAGE_SIZE,
   });
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  // 納入場所は CD だけでは分かりにくいのでマスタの名称を添える
-  const locNames = await locationNameMap(session.companyId, rows.map((r) => r.locCd));
 
   const qs = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
@@ -114,9 +112,7 @@ export default async function PricesPage({
                     {p.locCd && p.locCd !== "*" ? (
                       <>
                         <span className="font-mono">{p.locCd}</span>
-                        {locNames.get(p.locCd) && (
-                          <span className="ml-1 text-[#707070]">{locNames.get(p.locCd)}</span>
-                        )}
+                        {p.locName && <span className="ml-1 text-[#707070]">{p.locName}</span>}
                       </>
                     ) : (
                       "—"
