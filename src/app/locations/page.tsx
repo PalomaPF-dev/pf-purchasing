@@ -40,7 +40,10 @@ export default async function LocationsPage({
         description={`納入場所CDと名称の対応（全 ${total.toLocaleString()} 件）。単価履歴・単価申請の画面で、CDのとなりに名称を表示します。`}
       />
 
-      <ImportPanel kinds={["locations"]} title="Excel/CSVで納入場所マスタを一括登録" />
+      <ImportPanel
+        kinds={["locations"]}
+        title="mcframeの場所マスタ（Excel/CSV）から一括登録"
+      />
 
       {/* 追加・更新フォーム */}
       <form
@@ -86,6 +89,8 @@ export default async function LocationsPage({
                 <th className="px-2 py-2.5 font-medium">納入場所CD</th>
                 <th className="px-2 py-2.5 font-medium">納入場所名</th>
                 <th className="px-2 py-2.5 font-medium">備考</th>
+                <th className="px-2 py-2.5 font-medium">更新ユーザー</th>
+                <th className="px-2 py-2.5 font-medium">更新日時</th>
                 <th className="px-2 py-2.5 font-medium">状態</th>
                 <th className="px-2 py-2.5 text-right font-medium">操作</th>
               </tr>
