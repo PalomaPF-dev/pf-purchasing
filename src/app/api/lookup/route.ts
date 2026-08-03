@@ -3,6 +3,7 @@ import { getSessionWithRole, supplierScopeOf } from "@/lib/session";
 import {
   canAccessSupplier,
   currentPriceFor,
+  previousPriceFor,
   searchActiveSuppliers,
   searchItems,
   searchSuggestions,
@@ -92,11 +93,19 @@ export async function GET(req: NextRequest) {
       if (!(await canAccessSupplier(session.companyId, supplier, scope.buyerLoginId))) {
         return NextResponse.json({ current: null });
       }
-      const current = await currentPriceFor(session.companyId, item, supplier, {
-        branch: sp.get("branch") || null,
-        locCd: sp.get("loc") || null,
-        onDate: sp.get("date") || null,
-      });
+      // 旧単価は「適用日の前日時点で有効な単価」。日付未指定なら現在有効な単価
+      const date = sp.get("date");
+      const current = date
+        ? await previousPriceFor(session.companyId, item, supplier, {
+            branch: sp.get("branch") || null,
+            locCd: sp.get("loc") || null,
+            startDate: date,
+          })
+        : await currentPriceFor(session.companyId, item, supplier, {
+            branch: sp.get("branch") || null,
+            locCd: sp.get("loc") || null,
+            onDate: null,
+          });
       return NextResponse.json({ current });
     }
     return NextResponse.json({ error: "unknown type" }, { status: 400 });
