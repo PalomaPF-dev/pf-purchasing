@@ -1365,6 +1365,10 @@ export interface LocationRow {
   name: string;
   notes: string | null;
   active: boolean;
+  /** mcframe 場所マスタ側の更新ユーザー名（取込時に記録） */
+  sourceUser: string | null;
+  /** mcframe 場所マスタ側の更新日時（取込時に記録） */
+  sourceUpdatedAt: string | null;
 }
 
 export async function listLocations(
@@ -1384,14 +1388,20 @@ export async function listLocations(
     sql`SELECT COUNT(*)::int AS n FROM locations WHERE ${where}`,
   ]);
   return {
-    rows: (rows as any[]).map((r) => ({
-      id: r.id,
-      code: r.code,
-      name: r.name ?? "",
-      notes: r.notes ?? null,
-      active: r.active,
-    })),
+    rows: (rows as any[]).map(mapLocation),
     total: Number((cnt as any)[0]?.n ?? 0),
+  };
+}
+
+function mapLocation(r: any): LocationRow {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name ?? "",
+    notes: r.notes ?? null,
+    active: r.active,
+    sourceUser: r.source_user ?? null,
+    sourceUpdatedAt: r.source_updated_at ? new Date(r.source_updated_at).toISOString() : null,
   };
 }
 
@@ -1453,6 +1463,17 @@ export async function deleteLocation(companyId: string, id: string): Promise<voi
   await sql`DELETE FROM locations WHERE company_id = ${companyId} AND id = ${id}`;
 }
 
+export interface LocationInput {
+  code: string;
+  name: string;
+  /** mcframe 場所マスタの更新ユーザ名 */
+  sourceUser?: string | null;
+  /** mcframe 場所マスタの更新日時（ISO文字列） */
+  sourceUpdatedAt?: string | null;
+  /** 論理削除された場所は無効として登録する（履歴の名称表示のため行は残す） */
+  active?: boolean;
+}
+
 /**
  * 納入場所の一括登録。
  * 取込（納入場所マスタ・移行データ・単価改訂履歴）から共通で使う。
@@ -1460,31 +1481,42 @@ export async function deleteLocation(companyId: string, id: string): Promise<voi
  */
 export async function upsertLocationsBatch(
   companyId: string,
-  locs: { code: string; name: string }[]
+  locs: LocationInput[],
+  /** true のときだけ有効/無効を取込値で上書きする（移行・改訂履歴からの登録では触らない） */
+  opts: { applyActive?: boolean } = {}
 ): Promise<{ created: number; updated: number }> {
   await ensureSchema();
   const sql = getSql();
-  const dedup = new Map<string, string>();
+  const setActive = opts.applyActive ? sql`active = EXCLUDED.active,` : sql``;
+  const dedup = new Map<string, LocationInput>();
   for (const l of locs) {
     // 全角CD（Ｍ25 等）は半角に正規化して重複登録を防ぐ
     const code = (l.code ?? "").trim().normalize("NFKC");
     if (!code || code === "*") continue;
     const name = (l.name ?? "").trim();
+    const prev = dedup.get(code);
     // 同一CDが複数回出てきた場合は、名称のある方を採用する
-    if (!dedup.has(code) || (name && !dedup.get(code))) dedup.set(code, name);
+    if (!prev || (name && !prev.name)) dedup.set(code, { ...l, code, name });
   }
-  const rows = [...dedup.entries()];
+  const rows = [...dedup.values()];
   let created = 0;
   let updated = 0;
   const CHUNK = 500;
   for (let i = 0; i < rows.length; i += CHUNK) {
     const chunk = rows.slice(i, i + CHUNK);
     const res = (await sql`
-      INSERT INTO locations (company_id, code, name)
+      INSERT INTO locations (company_id, code, name, source_user, source_updated_at, active)
       SELECT ${companyId}::uuid, * FROM unnest(
-        ${chunk.map((r) => r[0])}::text[], ${chunk.map((r) => r[1])}::text[])
+        ${chunk.map((r) => r.code)}::text[],
+        ${chunk.map((r) => r.name)}::text[],
+        ${chunk.map((r) => r.sourceUser ?? null)}::text[],
+        ${chunk.map((r) => r.sourceUpdatedAt ?? null)}::timestamptz[],
+        ${chunk.map((r) => r.active ?? true)}::boolean[])
       ON CONFLICT (company_id, code) DO UPDATE SET
         name = COALESCE(NULLIF(EXCLUDED.name, ''), locations.name),
+        source_user = COALESCE(EXCLUDED.source_user, locations.source_user),
+        source_updated_at = COALESCE(EXCLUDED.source_updated_at, locations.source_updated_at),
+        ${setActive}
         updated_at = NOW()
       RETURNING (xmax = 0) AS inserted`) as any[];
     for (const r of res) {

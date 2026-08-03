@@ -41,7 +41,7 @@ const REASON_HEADERS = [
   "取引先CD", "取引先名", "品目CD", "品名", "開始日", "ロット", "納入場所CD", "納入場所",
   "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考", "出力社員名",
 ];
-const LOCATION_HEADERS = ["納入場所CD", "納入場所名", "備考"];
+const LOCATION_HEADERS = ["納入場所CD", "納入場所名", "更新ユーザ名", "更新日時"];
 
 const TEMPLATES: Record<string, { headers: string[]; name: string }> = {
   items: { headers: ITEM_HEADERS, name: "品番マスタ取込" },
@@ -70,11 +70,14 @@ export async function GET(req: Request) {
 /** セル値を文字列化（Excel の日付・数値・リッチテキスト対応） */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function cellStr(v: any): string {
-  if (v == null) return "";
   if (v instanceof Date) {
     const p = (n: number) => String(n).padStart(2, "0");
-    return `${v.getUTCFullYear()}-${p(v.getUTCMonth() + 1)}-${p(v.getUTCDate())}`;
+    const d = `${v.getUTCFullYear()}-${p(v.getUTCMonth() + 1)}-${p(v.getUTCDate())}`;
+    // 日付セルは YYYY-MM-DD。時刻を持つ（＝日時）セルだけ時刻も残す
+    const ms = v.getTime() % 86400000;
+    return ms === 0 ? d : `${d}T${p(v.getUTCHours())}:${p(v.getUTCMinutes())}:${p(v.getUTCSeconds())}Z`;
   }
+  if (v == null) return "";
   if (typeof v === "object") {
     if (typeof v.text === "string") return v.text.trim();
     if (Array.isArray(v.richText)) return v.richText.map((r: any) => r.text).join("").trim();
@@ -93,6 +96,17 @@ function normDate(s: string): string | null {
   m = t.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   return null;
+}
+
+/**
+ * 日時の正規化。Excelの日付セル（cellStr で YYYY-MM-DD 化済み）と、
+ * "Fri Jan 09 2026 16:20:01 GMT+0900" のような文字列の両方を受ける。
+ */
+function normTimestamp(s: string): string | null {
+  const t = s.trim();
+  if (!t) return null;
+  const d = new Date(t);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 function toNum(s: string): number | null {
@@ -202,13 +216,14 @@ export async function POST(req: Request) {
   // 種類ごとの想定シート名とキー列（実データのブック構成に合わせる）
   const SHEET_HINTS: Record<string, string[]> = {
     "supplier-contacts": ["取引先CDと窓口一覧", "窓口"],
+    locations: ["場所マスタ", "納入場所"],
   };
   const KEY_COLS: Record<string, string[]> = {
     "history-reasons": ["品目CD"],
     items: ["品目CD"],
     suppliers: ["取引先CD", "発注先CD"],
     "supplier-contacts": ["取引先CD", "発注先CD"],
-    locations: ["納入場所CD", "納入場所ＣＤ"],
+    locations: ["納入場所CD", "納入場所ＣＤ", "場所ＣＤ", "場所CD"],
     prices: ["品目CD"],
   };
 
@@ -320,35 +335,48 @@ export async function POST(req: Request) {
     }
 
     if (kind === "locations") {
-      if (!hasCol("納入場所CD", "納入場所ＣＤ")) {
+      if (!hasCol("納入場所CD", "納入場所ＣＤ", "場所ＣＤ", "場所CD")) {
         return NextResponse.json(
-          { error: "ヘッダに「納入場所CD」が必要です。テンプレートをご利用ください。" },
+          { error: "ヘッダに「納入場所CD」（mcframe 場所マスタなら「場所ＣＤ」）が必要です。テンプレートをご利用ください。" },
           { status: 422 }
         );
       }
-      // mcframe の単価情報エクスポート（loc_nm 列）もそのまま取り込めるようにする。
-      // 全角CD（Ｍ25 等）は半角に正規化して、単価履歴側のCDと揃える
+      // mcframe の場所マスタ（場所ＣＤ／場所名／更新ユーザ名／更新日時）と、
+      // 単価情報エクスポート（loc_cd / loc_nm）のどちらもそのまま取り込める。
+      // 全角CD（Ｍ25 等）は半角に正規化して、単価履歴側のCDと揃える。
+      const hasDelFlg = hasCol("論理削除", "del_flg");
+      let deleted = 0;
       const payload = dataRows
-        .map((r) => ({
-          code: get(r, "納入場所CD", "納入場所ＣＤ", "loc_cd").normalize("NFKC"),
-          name: get(r, "納入場所名", "納入場所", "loc_nm"),
-        }))
+        .map((r) => {
+          // 論理削除された場所も、履歴の名称表示のため「無効」として登録する
+          const del = get(r, "論理削除", "del_flg");
+          const active = !(del && del !== "0");
+          if (!active) deleted++;
+          return {
+            code: get(r, "納入場所CD", "納入場所ＣＤ", "場所ＣＤ", "場所CD", "loc_cd").normalize("NFKC"),
+            name: get(r, "納入場所名", "納入場所", "場所名", "loc_nm"),
+            sourceUser: get(r, "更新ユーザ名", "更新ユーザー名") || null,
+            sourceUpdatedAt: normTimestamp(get(r, "更新日時")),
+            active,
+          };
+        })
         .filter((r) => r.code && r.code !== "*");
       if (payload.length === 0) {
         return NextResponse.json({ error: "取込できる行がありません。" }, { status: 422 });
       }
-      const res = await upsertLocationsBatch(session.companyId, payload);
+      const res = await upsertLocationsBatch(session.companyId, payload, { applyActive: hasDelFlg });
       const named = payload.filter((r) => r.name).length;
+      const errors: string[] = [];
+      if (named === 0) errors.push("名称の列（納入場所名／場所名）が見つからないため、CDのみ登録しました。");
+      if (hasDelFlg && deleted > 0)
+        errors.push(`論理削除されている ${deleted.toLocaleString()} 件は「無効」として登録しました（単価履歴の名称表示には使われます）。`);
       return NextResponse.json({
         ok: true,
         kind,
         count: res.created + res.updated,
         created: res.created,
         updated: res.updated,
-        errors:
-          named === 0
-            ? ["名称の列（納入場所名）が見つからないため、CDのみ登録しました。"]
-            : [],
+        errors,
       });
     }
 

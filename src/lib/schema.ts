@@ -92,6 +92,9 @@ async function buildSchema(): Promise<void> {
       UNIQUE (company_id, code)
     )`);
   await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS locations_company_idx ON locations(company_id)`);
+  // mcframe 場所マスタの更新情報（取込元の鮮度が分かるように保持する。アプリ側の更新は updated_at）
+  await safeDdl(() => sql`ALTER TABLE locations ADD COLUMN IF NOT EXISTS source_user TEXT`);
+  await safeDdl(() => sql`ALTER TABLE locations ADD COLUMN IF NOT EXISTS source_updated_at TIMESTAMPTZ`);
 
   // 社員マスタ（社員一覧）。アプリのユーザー登録の元になる。
   // wf_role: 'mgr' | 'dept' | null（承認W/Fの段階）。role: 'admin' | 'member'

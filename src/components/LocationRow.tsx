@@ -7,6 +7,18 @@ import { deleteLocationAction, updateLocationAction } from "@/lib/actions";
 import type { LocationRow as Loc } from "@/lib/db";
 
 /**
+ * 取込元（mcframe）の更新日時。ファイルに書かれていた日時をそのまま出すため、
+ * タイムゾーン換算はせず ISO 文字列の日付・時刻部分を並べ替えるだけにする。
+ */
+function sourceStamp(iso: string | null): string {
+  if (!iso) return "—";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return "—";
+  const [, y, mo, d, h, mi] = m;
+  return h === "00" && mi === "00" ? `${y}/${mo}/${d}` : `${y}/${mo}/${d} ${h}:${mi}`;
+}
+
+/**
  * 納入場所マスタの1行。「編集」で名称・備考をその場で修正できる。
  * 納入場所CDは単価履歴との紐付けキーのため変更できない。
  */
@@ -66,6 +78,9 @@ export default function LocationRow({ loc }: { loc: Loc }) {
         <td className={cell}>
           <input className={input} value={f.notes} onChange={(e) => setF((p) => ({ ...p, notes: e.target.value }))} />
         </td>
+        {/* 取込元（mcframe）の更新情報は編集しない */}
+        <td className={`${cell} text-xs text-[#707070]`}>{loc.sourceUser || "—"}</td>
+        <td className={`${cell} text-xs text-[#707070]`}>{sourceStamp(loc.sourceUpdatedAt)}</td>
         <td className={cell}>
           <label className="flex items-center gap-1.5 text-xs text-[#555555]">
             <input
@@ -94,6 +109,8 @@ export default function LocationRow({ loc }: { loc: Loc }) {
       <td className={`${cell} font-mono`}>{loc.code}</td>
       <td className={cell}>{loc.name || <span className="text-[#c0c0c0]">（名称未登録）</span>}</td>
       <td className={`${cell} text-xs text-[#707070]`}>{loc.notes || "—"}</td>
+      <td className={`${cell} text-xs text-[#707070]`}>{loc.sourceUser || "—"}</td>
+      <td className={`${cell} text-xs text-[#707070]`}>{sourceStamp(loc.sourceUpdatedAt)}</td>
       <td className={cell}>
         {loc.active ? (
           <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">有効</span>
