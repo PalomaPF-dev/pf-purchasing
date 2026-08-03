@@ -20,6 +20,7 @@ const SORT_KEYS: PriceSort[] = [
   "supplier",
   "loc",
   "price",
+  "reason",
   "source",
 ];
 
@@ -32,6 +33,7 @@ export default async function PricesPage({
     itemNameQ?: string;
     supplierQ?: string;
     locQ?: string;
+    reasonQ?: string;
     page?: string;
     active?: string;
     sort?: string;
@@ -46,6 +48,7 @@ export default async function PricesPage({
     itemNameQ: sp.itemNameQ ?? "",
     supplierQ: sp.supplierQ ?? "",
     locQ: sp.locQ ?? "",
+    reasonQ: sp.reasonQ ?? "",
   };
   const activeOnly = sp.active === "1";
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
@@ -106,6 +109,7 @@ export default async function PricesPage({
             itemNameQ: filters.itemNameQ || undefined,
             supplierQ: filters.supplierQ || undefined,
             locQ: filters.locQ || undefined,
+            reasonQ: filters.reasonQ || undefined,
             sort: sort === PRICE_SORT_DEFAULT && dir === "desc" ? undefined : sort,
             dir: sort === PRICE_SORT_DEFAULT && dir === "desc" ? undefined : dir,
           }}
@@ -189,6 +193,9 @@ export default async function PricesPage({
                   />
                 </th>
                 <th className="px-2 py-2.5 font-medium">
+                  <SortHeader label="備考（改訂理由）" sortKey="reason" current={sort} dir={dir} href={sortHref} />
+                </th>
+                <th className="px-2 py-2.5 font-medium">
                   <SortHeader label="区分" sortKey="source" current={sort} dir={dir} href={sortHref} />
                 </th>
               </tr>
@@ -222,6 +229,9 @@ export default async function PricesPage({
                   <td className="px-2 py-2 text-right font-mono font-semibold">{formatPrice(p.price)}</td>
                   <td className="px-2 py-2 text-xs">{formatDate(p.startDate)}</td>
                   <td className="px-2 py-2 text-xs">{formatDate(p.endDate)}</td>
+                  <td className="max-w-64 px-2 py-2 text-xs" title={p.reason ?? undefined}>
+                    <span className="line-clamp-2">{p.reason || <span className="text-[#c0c0c0]">—</span>}</span>
+                  </td>
                   <td className="px-2 py-2">
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
