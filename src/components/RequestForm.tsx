@@ -8,7 +8,6 @@ import {
   Paperclip,
   Plus,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -188,6 +187,16 @@ function impactOf(l: FormLine): number | null {
   return Math.round(q * d * 100) / 100;
 }
 
+/** 単価差の内訳（改訂理由別）。表の列としてこの順で並べる */
+const BREAKDOWN = [
+  ["bdSupplyMat", "支給材建値"],
+  ["bdMaterial", "材料建値"],
+  ["bdRevision", "単価改定"],
+  ["bdDesign", "設計変更"],
+  ["bdForex", "為替変動"],
+  ["bdOther", "その他"],
+] as const satisfies ReadonlyArray<readonly [keyof FormLine, string]>;
+
 /** 内訳合計 */
 function bdSum(l: FormLine): number | null {
   const vals = [l.bdSupplyMat, l.bdMaterial, l.bdRevision, l.bdDesign, l.bdForex, l.bdOther]
@@ -227,8 +236,6 @@ export default function RequestForm({
   const [attachments, setAttachments] = useState<File[]>([]);
   // 入力方法のタブ（手入力／見積書から取り込み／Excel・CSVで一括入力）
   const [tab, setTab] = useState<Tab>("manual");
-  // 単価差の内訳を展開している明細行
-  const [openRows, setOpenRows] = useState<Set<number>>(new Set());
   // 取引先（申請の対象）。編集時は既存明細から復元する
   const [supplier, setSupplier] = useState<PickedSupplier | null>(() => {
     const first = initialLines?.[0];
@@ -432,10 +439,11 @@ export default function RequestForm({
   }
 
   const th = "whitespace-nowrap px-2 py-2 text-left text-[11px] font-medium text-[#707070]";
+  const thGroup =
+    "whitespace-nowrap px-2 py-1 text-center text-[11px] font-bold tracking-wide text-[#707070]";
   const td = "px-2 py-1.5 align-top";
   const cell =
     "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
-  const labelCls2 = "block text-[10px] font-medium text-[#707070] mb-0.5";
 
   const TABS: { key: Tab; label: string; icon: typeof Keyboard }[] = [
     { key: "manual", label: "手入力", icon: Keyboard },
@@ -460,13 +468,16 @@ export default function RequestForm({
 
       {/* 申請タイトル */}
       <div className="rounded-xl border border-[#e5e5e5] bg-white p-4">
-        <label className={labelCls}>申請タイトル（任意・例: 2026/8月改定 ○○社）</label>
+        <label className={labelCls}>申請タイトル（改訂理由）</label>
         <input
           className={inputCls}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="例: 銀・銅価格高騰に伴う価格改定"
+          placeholder="例: 銀・銅価格高騰に伴う価格改定（2026/8月改定 ○○社）"
         />
+        <p className="mt-1 text-xs text-[#a0a0a0]">
+          この申請全体の改訂理由を入れてください。明細ごとに補足したいことがある場合だけ、明細の「備考」に記入します。
+        </p>
       </div>
 
       {!supplier ? (
@@ -507,23 +518,55 @@ export default function RequestForm({
 
           {/* 明細（表形式） */}
           <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-            <table className="w-full min-w-[1560px] border-collapse text-sm">
+            <table className="w-full min-w-[2320px] border-collapse text-sm">
               <thead>
+                {/* 帳票と同じ並び: 新単価 → 旧単価 → 単価差 → 内訳 → 月当たり → 登録項目 */}
+                <tr className="border-b border-[#f0f0f0] bg-[#fafafa] text-center">
+                  <th className={`${th} w-10`} rowSpan={2}>#</th>
+                  <th className={`${th} w-52`} rowSpan={2}>品目CD *</th>
+                  <th className={`${th} w-44`} rowSpan={2}>品名</th>
+                  <th className={`${th} w-24`} rowSpan={2}>納入場所</th>
+                  <th className={`${thGroup} border-l border-[#eeeeee] bg-rose-50`} colSpan={3}>
+                    新 単 価
+                  </th>
+                  <th className={`${th} w-28 border-l border-[#eeeeee] bg-slate-50 text-right`} rowSpan={2}>
+                    旧単価
+                  </th>
+                  <th className={`${th} w-24 border-l border-[#eeeeee] text-right`} rowSpan={2}>
+                    単価差
+                  </th>
+                  <th className={`${thGroup} border-l border-[#eeeeee] bg-amber-50`} colSpan={6}>
+                    単 価 差 の 内 訳
+                  </th>
+                  <th className={`${thGroup} border-l border-[#eeeeee] bg-amber-50/50`} colSpan={3}>
+                    月 当 た り
+                  </th>
+                  <th className={`${thGroup} border-l border-[#eeeeee]`} colSpan={5}>
+                    登録項目（mcframe）
+                  </th>
+                  <th className={`${th} w-40 border-l border-[#eeeeee]`} rowSpan={2}>備考</th>
+                  <th className={`${th} w-16 text-center`} rowSpan={2}>操作</th>
+                </tr>
                 <tr className="border-b border-[#eeeeee] bg-[#fafafa]">
-                  <th className={`${th} w-10`}>#</th>
-                  <th className={`${th} w-60`}>品目CD *</th>
-                  <th className={`${th} w-56`}>品名</th>
-                  <th className={`${th} w-24`}>納入場所</th>
                   <th className={`${th} w-28 border-l border-[#eeeeee] bg-rose-50`}>適用日 *</th>
                   <th className={`${th} w-24 bg-rose-50 text-right`}>新単価 *</th>
                   <th className={`${th} w-24 bg-rose-50 text-right`}>支給単価</th>
-                  <th className={`${th} w-28 border-l border-[#eeeeee] bg-slate-50 text-right`}>旧単価</th>
-                  <th className={`${th} w-24 border-l border-[#eeeeee] text-right`}>単価差</th>
-                  <th className={`${th} w-24 border-l border-[#eeeeee] text-right`}>月数量</th>
-                  <th className={`${th} w-28 text-right`}>月額</th>
-                  <th className={`${th} w-28 text-right`}>改訂影響額/月</th>
-                  <th className={`${th} w-56`}>備考（改訂理由）</th>
-                  <th className={`${th} w-20 text-center`}>操作</th>
+                  {BREAKDOWN.map(([key, label], bi) => (
+                    <th
+                      key={key}
+                      className={`${th} w-16 text-right ${bi === 0 ? "border-l border-[#eeeeee]" : ""}`}
+                    >
+                      {label}
+                    </th>
+                  ))}
+                  <th className={`${th} w-20 border-l border-[#eeeeee] text-right`}>数量</th>
+                  <th className={`${th} w-24 text-right`}>月額</th>
+                  <th className={`${th} w-24 text-right`}>改訂影響額</th>
+                  <th className={`${th} w-16 border-l border-[#eeeeee]`}>枝番</th>
+                  <th className={`${th} w-20`}>納品先CD</th>
+                  <th className={`${th} w-16`}>単位CD</th>
+                  <th className={`${th} w-16 text-right`}>ロット数</th>
+                  <th className={`${th} w-32`}>適用終了日</th>
                 </tr>
               </thead>
               <tbody>
@@ -631,14 +674,30 @@ export default function RequestForm({
                             </div>
                           )}
                         </td>
+                        {/* 単価差の内訳（改訂理由別・申請書に記載される） */}
+                        {BREAKDOWN.map(([key], bi) => (
+                          <td
+                            key={key}
+                            className={`${td} ${bi === 0 ? "border-l border-[#f0f0f0]" : ""} bg-amber-50/30`}
+                          >
+                            <input
+                              className={`${cell} px-1 text-right font-mono`}
+                              inputMode="decimal"
+                              value={l[key]}
+                              onChange={(e) =>
+                                update(i, { [key]: e.target.value } as Partial<FormLine>)
+                              }
+                            />
+                          </td>
+                        ))}
                         {/* 月当たり数量と改訂影響額 */}
                         <td className={`${td} border-l border-[#f0f0f0]`}>
                           <input
-                            className={`${cell} text-right`}
+                            className={`${cell} px-1 text-right`}
                             inputMode="decimal"
                             value={l.monthlyQty}
                             onChange={(e) => update(i, { monthlyQty: e.target.value })}
-                            placeholder="月数量"
+                            placeholder="数量"
                           />
                         </td>
                         <td className={`${td} text-right font-mono text-xs text-[#707070]`}>
@@ -659,135 +718,65 @@ export default function RequestForm({
                             {impact == null ? "—" : `${impact > 0 ? "+" : ""}${impact.toLocaleString()}`}
                           </span>
                         </td>
+                        {/* 登録項目（未入力ならMC取込時に現行の登録値を維持） */}
+                        <td className={`${td} border-l border-[#f0f0f0]`}>
+                          <input
+                            className={`${cell} px-1 font-mono`}
+                            value={l.itemBranch}
+                            onChange={(e) => update(i, { itemBranch: e.target.value })}
+                          />
+                        </td>
                         <td className={td}>
+                          <input
+                            className={`${cell} px-1 font-mono`}
+                            value={l.dlvCd}
+                            onChange={(e) => update(i, { dlvCd: e.target.value })}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={`${cell} px-1`}
+                            value={l.unitCd}
+                            onChange={(e) => update(i, { unitCd: e.target.value })}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={`${cell} px-1 text-right font-mono`}
+                            inputMode="decimal"
+                            value={l.lotQty}
+                            onChange={(e) => update(i, { lotQty: e.target.value })}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            type="date"
+                            className={`${cell} px-1`}
+                            value={l.endDate}
+                            onChange={(e) => update(i, { endDate: e.target.value })}
+                          />
+                        </td>
+                        <td className={`${td} border-l border-[#f0f0f0]`}>
                           <input
                             className={cell}
                             value={l.reasonNote}
                             onChange={(e) => update(i, { reasonNote: e.target.value })}
-                            placeholder="例: 銀・銅価格の高騰に伴う価格改定"
+                            placeholder="明細ごとの補足"
                           />
                         </td>
                         <td className={`${td} text-center`}>
-                          <div className="flex items-center justify-center gap-1">
-                            <button
-                              type="button"
-                              title="単価差の内訳を入力"
-                              onClick={() =>
-                                setOpenRows((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(i)) next.delete(i);
-                                  else next.add(i);
-                                  return next;
-                                })
-                              }
-                              className={`rounded p-1 ${
-                                openRows.has(i) || mismatch
-                                  ? "bg-[#fff1f2] text-[#e11d48]"
-                                  : "text-[#707070] hover:bg-[#f7f7f5]"
-                              }`}
-                            >
-                              <SlidersHorizontal className="h-4 w-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeLine(i)}
-                              disabled={lines.length <= 1}
-                              className="rounded p-1 text-red-600 hover:bg-red-50 disabled:opacity-30"
-                              title="この明細を削除"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeLine(i)}
+                            disabled={lines.length <= 1}
+                            className="rounded p-1 text-red-600 hover:bg-red-50 disabled:opacity-30"
+                            title="この明細を削除"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </td>
                       </tr>
 
-                      {/* 単価差の内訳（展開行） */}
-                      {openRows.has(i) && (
-                        <tr className="border-b border-[#f5f5f5] bg-[#f8fafc]">
-                          <td className={td}></td>
-                          <td className={td} colSpan={13}>
-                            <div className="mb-1.5 text-[11px] font-bold text-[#707070]">
-                              単価差の内訳（改訂理由別・申請書に記載されます）
-                              {mismatch && (
-                                <span className="ml-2 font-medium text-red-600">
-                                  ⚠ 内訳合計 {s} が単価差 {d} と一致していません
-                                </span>
-                              )}
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-                              {(
-                                [
-                                  ["bdSupplyMat", "支給材建値"],
-                                  ["bdMaterial", "材料建値"],
-                                  ["bdRevision", "単価改定"],
-                                  ["bdDesign", "設計変更"],
-                                  ["bdForex", "為替変動"],
-                                  ["bdOther", "その他"],
-                                ] as const
-                              ).map(([key, label]) => (
-                                <div key={key}>
-                                  <label className={labelCls2}>{label}</label>
-                                  <input
-                                    className={`${cell} text-right font-mono`}
-                                    inputMode="decimal"
-                                    value={l[key]}
-                                    onChange={(e) =>
-                                      update(i, { [key]: e.target.value } as Partial<FormLine>)
-                                    }
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-                              <div>
-                                <label className={labelCls2}>枝番</label>
-                                <input
-                                  className={`${cell} font-mono`}
-                                  value={l.itemBranch}
-                                  onChange={(e) => update(i, { itemBranch: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className={labelCls2}>納品先CD</label>
-                                <input
-                                  className={`${cell} font-mono`}
-                                  value={l.dlvCd}
-                                  onChange={(e) => update(i, { dlvCd: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className={labelCls2}>単位CD</label>
-                                <input
-                                  className={cell}
-                                  value={l.unitCd}
-                                  onChange={(e) => update(i, { unitCd: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className={labelCls2}>ロット数</label>
-                                <input
-                                  className={`${cell} text-right font-mono`}
-                                  inputMode="decimal"
-                                  value={l.lotQty}
-                                  onChange={(e) => update(i, { lotQty: e.target.value })}
-                                />
-                              </div>
-                              <div>
-                                <label className={labelCls2}>適用終了日</label>
-                                <input
-                                  type="date"
-                                  className={cell}
-                                  value={l.endDate}
-                                  onChange={(e) => update(i, { endDate: e.target.value })}
-                                />
-                              </div>
-                            </div>
-                            <p className="mt-1.5 text-[10px] text-[#a0a0a0]">
-                              ※ 未入力の項目は、MC取込出力時に mcframe の現行登録値がそのまま維持されます。
-                            </p>
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   );
                 })}
@@ -795,7 +784,8 @@ export default function RequestForm({
               {/* 合計（単価改訂の影響額） */}
               <tfoot>
                 <tr className="border-t-2 border-[#e5e5e5] bg-[#fafafa] text-sm font-bold">
-                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={9}>
+                  {/* #〜内訳（15列）までをまとめて見出しにする */}
+                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={15}>
                     合計（月当たり）
                   </td>
                   <td className="px-2 py-2 text-right font-mono text-xs text-[#707070]">
@@ -819,7 +809,8 @@ export default function RequestForm({
                       ? "—"
                       : `${totalImpact > 0 ? "+" : ""}${totalImpact.toLocaleString()}`}
                   </td>
-                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={2}>
+                  {/* 登録項目5列＋備考＋操作 */}
+                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={7}>
                     年換算 {totalImpact == null ? "—" : `${(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}`}
                   </td>
                 </tr>
