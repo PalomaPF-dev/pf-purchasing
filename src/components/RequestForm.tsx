@@ -155,6 +155,24 @@ function dayBeforeStr(ymd: string): string {
   return s.replace(/-/g, "/");
 }
 
+/**
+ * 前回の適用終了日の「翌日」。次の改訂の適用日の既定値に使う。
+ * 2099-12-31 のような無期限（適用終了日なし）の場合は既定値を動かさない。
+ */
+function nextDayOf(ymd: string | null | undefined, notBefore?: string): string | null {
+  if (!ymd) return null;
+  const t = ymd.slice(0, 10);
+  // 無期限を表す番人日付は「前回の終了日」とみなさない
+  if (t >= "2099-01-01") return null;
+  const d = new Date(`${t}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() + 1);
+  const next = d.toISOString().slice(0, 10);
+  // ずっと前に終了したままの単価に引きずられて、過去の日付に戻さない
+  if (notBefore && next < notBefore) return null;
+  return next;
+}
+
 /** 差額（新単価 − 旧単価）。片方未入力なら null */
 function diffOf(l: FormLine): number | null {
   const cur = toNum(l.currentPrice);
@@ -256,6 +274,8 @@ export default function RequestForm({
 
   /** 品目候補から選択したときに、品名・単位・ロット・納入場所・現行単価をまとめて反映 */
   function pickItem(i: number, it: PickedItem) {
+    // 旧単価の取消日＝前回の適用終了日。その翌日を新単価の適用日の既定にする
+    const next = nextDayOf(it.endDate, today);
     update(i, {
       itemCd: it.code,
       itemBranch: it.branch ?? "",
@@ -265,6 +285,7 @@ export default function RequestForm({
       locCd: it.locCd ?? "",
       dlvCd: it.dlvCd ?? "",
       currentPrice: it.currentPrice != null ? String(it.currentPrice) : "",
+      ...(next ? { startDate: next } : {}),
     });
   }
 
@@ -303,11 +324,14 @@ export default function RequestForm({
     const res = await fetch(`/api/lookup?${qs}`);
     const data = await res.json().catch(() => ({}));
     if (data.current) {
+      // 旧単価に適用終了日が入っていれば、その翌日を適用日の既定にする
+      const next = nextDayOf(data.current.endDate, today);
       update(i, {
         currentPrice: String(data.current.price),
         unitCd: lines[i].unitCd || (data.current.unitCd ?? ""),
         lotQty: lines[i].lotQty || (data.current.lotQty != null ? String(data.current.lotQty) : ""),
         itemName: lines[i].itemName || (data.current.itemName ?? ""),
+        ...(next ? { startDate: next } : {}),
       });
     } else {
       setError(`明細${i + 1}: 単価履歴に現行単価が見つかりませんでした（新規品目の場合はそのまま申請できます）。`);
@@ -520,13 +544,16 @@ export default function RequestForm({
           <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
             <table className="w-full min-w-[2240px] border-collapse text-sm">
               <thead>
-                {/* 帳票と同じ並び: 新単価 → 旧単価 → 単価差 → 内訳 → 月当たり → 登録項目 */}
+                {/* 品目の属性（枝番・単位・ロット数）→ 新単価 → 旧単価 → 単価差 → 内訳 → 月当たり */}
                 <tr className="border-b border-[#f0f0f0] bg-[#fafafa] text-center">
                   <th className={`${th} w-10`} rowSpan={2}>#</th>
                   <th className={`${th} w-52`} rowSpan={2}>品目CD *</th>
+                  <th className={`${th} w-16`} rowSpan={2}>枝番</th>
                   <th className={`${th} w-44`} rowSpan={2}>品名</th>
+                  <th className={`${th} w-16`} rowSpan={2}>単位</th>
+                  <th className={`${th} w-20 text-right`} rowSpan={2}>ロット数</th>
                   <th className={`${th} w-24`} rowSpan={2}>納入場所</th>
-                  <th className={`${thGroup} border-l border-[#eeeeee] bg-rose-50`} colSpan={3}>
+                  <th className={`${thGroup} border-l border-[#eeeeee] bg-rose-50`} colSpan={4}>
                     新 単 価
                   </th>
                   <th className={`${th} w-28 border-l border-[#eeeeee] bg-slate-50 text-right`} rowSpan={2}>
@@ -541,9 +568,6 @@ export default function RequestForm({
                   <th className={`${thGroup} border-l border-[#eeeeee] bg-amber-50/50`} colSpan={3}>
                     月 当 た り
                   </th>
-                  <th className={`${thGroup} border-l border-[#eeeeee]`} colSpan={4}>
-                    登録項目（mcframe）
-                  </th>
                   <th className={`${th} w-40 border-l border-[#eeeeee]`} rowSpan={2}>備考</th>
                   <th className={`${th} w-16 text-center`} rowSpan={2}>操作</th>
                 </tr>
@@ -551,6 +575,7 @@ export default function RequestForm({
                   <th className={`${th} w-28 border-l border-[#eeeeee] bg-rose-50`}>適用日 *</th>
                   <th className={`${th} w-24 bg-rose-50 text-right`}>新単価 *</th>
                   <th className={`${th} w-24 bg-rose-50 text-right`}>支給単価</th>
+                  <th className={`${th} w-32 bg-rose-50`}>適用終了日</th>
                   {BREAKDOWN.map(([key, label], bi) => (
                     <th
                       key={key}
@@ -562,10 +587,6 @@ export default function RequestForm({
                   <th className={`${th} w-20 border-l border-[#eeeeee] text-right`}>数量</th>
                   <th className={`${th} w-24 text-right`}>月額</th>
                   <th className={`${th} w-24 text-right`}>改訂影響額</th>
-                  <th className={`${th} w-16 border-l border-[#eeeeee]`}>枝番</th>
-                  <th className={`${th} w-16`}>単位</th>
-                  <th className={`${th} w-16 text-right`}>ロット数</th>
-                  <th className={`${th} w-32`}>適用終了日</th>
                 </tr>
               </thead>
               <tbody>
@@ -590,10 +611,32 @@ export default function RequestForm({
                         </td>
                         <td className={td}>
                           <input
+                            className={`${cell} px-1 font-mono`}
+                            value={l.itemBranch}
+                            onChange={(e) => update(i, { itemBranch: e.target.value })}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
                             className={cell}
                             value={l.itemName}
                             onChange={(e) => update(i, { itemName: e.target.value })}
                             placeholder="品名"
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={`${cell} px-1`}
+                            value={l.unitCd}
+                            onChange={(e) => update(i, { unitCd: e.target.value })}
+                          />
+                        </td>
+                        <td className={td}>
+                          <input
+                            className={`${cell} px-1 text-right font-mono`}
+                            inputMode="decimal"
+                            value={l.lotQty}
+                            onChange={(e) => update(i, { lotQty: e.target.value })}
                           />
                         </td>
                         <td className={td}>
@@ -627,6 +670,14 @@ export default function RequestForm({
                             inputMode="decimal"
                             value={l.paidSupplyPrice}
                             onChange={(e) => update(i, { paidSupplyPrice: e.target.value })}
+                          />
+                        </td>
+                        <td className={`${td} bg-rose-50/40`}>
+                          <input
+                            type="date"
+                            className={`${cell} px-1`}
+                            value={l.endDate}
+                            onChange={(e) => update(i, { endDate: e.target.value })}
                           />
                         </td>
                         {/* 旧単価 */}
@@ -717,37 +768,6 @@ export default function RequestForm({
                             {impact == null ? "—" : `${impact > 0 ? "+" : ""}${impact.toLocaleString()}`}
                           </span>
                         </td>
-                        {/* 登録項目（未入力ならMC取込時に現行の登録値を維持） */}
-                        <td className={`${td} border-l border-[#f0f0f0]`}>
-                          <input
-                            className={`${cell} px-1 font-mono`}
-                            value={l.itemBranch}
-                            onChange={(e) => update(i, { itemBranch: e.target.value })}
-                          />
-                        </td>
-                        <td className={td}>
-                          <input
-                            className={`${cell} px-1`}
-                            value={l.unitCd}
-                            onChange={(e) => update(i, { unitCd: e.target.value })}
-                          />
-                        </td>
-                        <td className={td}>
-                          <input
-                            className={`${cell} px-1 text-right font-mono`}
-                            inputMode="decimal"
-                            value={l.lotQty}
-                            onChange={(e) => update(i, { lotQty: e.target.value })}
-                          />
-                        </td>
-                        <td className={td}>
-                          <input
-                            type="date"
-                            className={`${cell} px-1`}
-                            value={l.endDate}
-                            onChange={(e) => update(i, { endDate: e.target.value })}
-                          />
-                        </td>
                         <td className={`${td} border-l border-[#f0f0f0]`}>
                           <input
                             className={cell}
@@ -776,8 +796,8 @@ export default function RequestForm({
               {/* 合計（単価改訂の影響額） */}
               <tfoot>
                 <tr className="border-t-2 border-[#e5e5e5] bg-[#fafafa] text-sm font-bold">
-                  {/* #〜内訳（15列）までをまとめて見出しにする */}
-                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={15}>
+                  {/* #〜内訳（19列）までをまとめて見出しにする */}
+                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={19}>
                     合計（月当たり）
                   </td>
                   <td className="px-2 py-2 text-right font-mono text-xs text-[#707070]">
@@ -801,8 +821,8 @@ export default function RequestForm({
                       ? "—"
                       : `${totalImpact > 0 ? "+" : ""}${totalImpact.toLocaleString()}`}
                   </td>
-                  {/* 登録項目4列＋備考＋操作 */}
-                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={6}>
+                  {/* 備考＋操作 */}
+                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={2}>
                     年換算 {totalImpact == null ? "—" : `${(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}`}
                   </td>
                 </tr>
