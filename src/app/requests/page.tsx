@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { Plus } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { getWfSettings, listRequests } from "@/lib/db";
-import { REQUEST_STATUS_LABEL, type RequestStatus } from "@/lib/types";
-import { formatDateTime } from "@/lib/format";
+import { approvalQueueFor, getWfSettings, listRequests } from "@/lib/db";
+import type { ApprovalStage, RequestStatus } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
 import ReqNoSettings from "@/components/ReqNoSettings";
-import DeleteDraftButton from "@/components/DeleteDraftButton";
+import RequestsTable from "@/components/RequestsTable";
 import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +33,7 @@ export default async function RequestsPage({
   const isAdmin = session.role === "admin";
   // 一般（バイヤー）は自分の担当取引先を含む申請のみ
   const scope = supplierScopeOf(session);
-  const [requests, wf] = await Promise.all([
+  const [requests, wf, queue] = await Promise.all([
     listRequests(session.companyId, {
       status: status || null,
       applicantLoginId: mine ? session.loginId : null,
@@ -42,7 +41,15 @@ export default async function RequestsPage({
       q: q || null,
     }),
     getWfSettings(session.companyId),
+    // 一覧からそのまま一括承認できるよう、自分がいま承認できる申請を調べる
+    isAdmin
+      ? approvalQueueFor(session.companyId, session.loginId)
+      : Promise.resolve({ buyer: [], mgr: [], dept: [], hidden: 0 }),
   ]);
+  const approvable: Record<string, ApprovalStage> = {};
+  for (const r of queue.buyer) approvable[r.id] = "buyer";
+  for (const r of queue.mgr) approvable[r.id] = "mgr";
+  for (const r of queue.dept) approvable[r.id] = "dept";
 
   const qsOf = (patch: Record<string, string>) => {
     const p = new URLSearchParams();
@@ -113,70 +120,15 @@ export default async function RequestsPage({
           該当する申請がありません。
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
-                <th className="px-4 py-2.5 font-medium">申請No</th>
-                <th className="px-2 py-2.5 font-medium">タイトル / 取引先</th>
-                <th className="px-2 py-2.5 font-medium">明細</th>
-                <th className="px-2 py-2.5 font-medium">申請者</th>
-                <th className="px-2 py-2.5 font-medium">提出日時</th>
-                <th className="px-2 py-2.5 font-medium">状態</th>
-                <th className="px-2 py-2.5 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((r) => (
-                <tr key={r.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
-                  <td className="px-4 py-2.5 font-mono">
-                    <Link href={`/requests/${r.id}`} className="font-semibold text-[#e11d48] hover:underline">
-                      {r.reqCode ?? "（下書き）"}
-                    </Link>
-                  </td>
-                  <td className="px-2 py-2.5">
-                    <Link href={`/requests/${r.id}`} className="hover:underline">
-                      {r.title || r.supplierSummary || "—"}
-                    </Link>
-                  </td>
-                  <td className="px-2 py-2.5">{r.lineCount ?? 0} 件</td>
-                  <td className="px-2 py-2.5">{r.applicantName ?? "—"}</td>
-                  <td className="px-2 py-2.5 text-xs">{formatDateTime(r.submittedAt ?? r.createdAt)}</td>
-                  <td className="px-2 py-2.5">
-                    <StatusBadge status={r.status} />
-                  </td>
-                  {/* 下書き・差し戻しは一覧からそのまま削除できる（本人と管理者のみ） */}
-                  <td className="px-2 py-2.5 text-right">
-                    {(r.status === "draft" || r.status === "rejected") &&
-                      (isAdmin || r.applicantLoginId === session.loginId) && (
-                        <DeleteDraftButton
-                          requestId={r.id}
-                          label={r.reqCode ?? r.title ?? "この下書き"}
-                        />
-                      )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <RequestsTable
+          requests={requests}
+          approvable={approvable}
+          stageLabels={{ buyer: wf.buyerLabel, mgr: wf.mgrLabel, dept: wf.deptLabel }}
+          isAdmin={isAdmin}
+          loginId={session.loginId}
+        />
       )}
     </div>
   );
 }
 
-function StatusBadge({ status }: { status: RequestStatus }) {
-  const color =
-    status === "approved"
-      ? "bg-emerald-50 text-emerald-700"
-      : status === "rejected"
-        ? "bg-red-50 text-red-700"
-        : status === "draft"
-          ? "bg-slate-100 text-slate-600"
-          : "bg-amber-50 text-amber-700";
-  return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${color}`}>
-      {REQUEST_STATUS_LABEL[status]}
-    </span>
-  );
-}
