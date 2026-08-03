@@ -1517,7 +1517,9 @@ export async function upsertItemsBatch(companyId: string, items: ItemInput[]): P
         ${cols.acctCd}::text[], ${cols.acctName}::text[], ${cols.acctDetail}::text[],
         ${cols.ics}::text[], ${cols.itemClass}::text[], ${cols.materialClass}::text[])
       ON CONFLICT (company_id, code, branch) DO UPDATE SET
-        name = EXCLUDED.name,
+        -- 品名が空の行では既存の品名を消さない（品名の無いファイルを取り込んでも
+        -- 登録済みの品名が失われないようにする。他の列と同じ扱い）
+        name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE items.name END,
         unit_cd = COALESCE(EXCLUDED.unit_cd, items.unit_cd),
         tax_cd = COALESCE(EXCLUDED.tax_cd, items.tax_cd),
         notes = COALESCE(EXCLUDED.notes, items.notes),
