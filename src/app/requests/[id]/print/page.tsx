@@ -137,7 +137,7 @@ export default async function RequestPrintPage({
 
         {request.title && (
           <p className="mb-2 text-sm">
-            <span className="font-bold">件名:</span> {request.title}
+            <span className="font-bold">改訂理由:</span> {request.title}
           </p>
         )}
 
