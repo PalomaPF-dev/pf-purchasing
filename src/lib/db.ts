@@ -1058,6 +1058,7 @@ export type PriceSort =
   | "supplier"
   | "loc"
   | "price"
+  | "reason"
   | "source";
 
 export type SortDir = "asc" | "desc";
@@ -1075,6 +1076,7 @@ export async function listPrices(
     itemNameQ?: string | null;
     supplierQ?: string | null;
     locQ?: string | null;
+    reasonQ?: string | null;
     supplierCd?: string | null;
     /** 指定時、その担当バイヤーの取引先の履歴のみ返す */
     buyerLoginId?: string | null;
@@ -1095,6 +1097,7 @@ export async function listPrices(
   const itemNameQ = like(opts.itemNameQ);
   const supplierQ = like(opts.supplierQ);
   const locQ = like(opts.locQ);
+  const reasonQ = like(opts.reasonQ);
   const activeOnly = opts.activeOnly ?? false;
 
   // 検索はマスタの名称も対象にする（移行データは品名・取引先名が空のことがあるため）。
@@ -1135,6 +1138,7 @@ export async function listPrices(
                 OR h.supplier_cd = ANY(${sSuppliers}::text[]))`
       : null,
     locQ ? sql`AND (h.loc_cd ILIKE ${locQ} OR h.loc_cd = ANY(${lLocs}::text[]))` : null,
+    reasonQ ? sql`AND h.reason ILIKE ${reasonQ}` : null,
   ].filter((c): c is NonNullable<typeof c> => c != null);
   // 断片を1つにまとめる（空でも動くように種を置く）
   let searchCond = sql``;
@@ -1168,8 +1172,10 @@ export async function listPrices(
               ? sql`h.price`
               : sort === "endDate"
                 ? sql`h.end_date`
-                : sort === "source"
-                  ? sql`h.source`
+                : sort === "reason"
+                  ? sql`h.reason`
+                  : sort === "source"
+                    ? sql`h.source`
                   : sql`h.start_date`;
   // 同値のときの並びを固定して、ページ送りで行が重複・欠落しないようにする
   const orderBy = sql`ORDER BY ${keyFrag} ${dirFrag}, h.start_date DESC, h.id`;

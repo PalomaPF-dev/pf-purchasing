@@ -13,15 +13,14 @@ export default function PriceFilters({
   sort,
   dir,
 }: {
-  values: { itemQ: string; itemNameQ: string; supplierQ: string; locQ: string };
+  values: { itemQ: string; itemNameQ: string; supplierQ: string; locQ: string; reasonQ: string };
   /** まとめ検索の語（この絞り込みと併用する） */
   q: string;
   activeOnly: boolean;
   sort: string;
   dir: string;
 }) {
-  const has =
-    values.itemQ !== "" || values.itemNameQ !== "" || values.supplierQ !== "" || values.locQ !== "";
+  const has = Object.values(values).some((v) => v !== "");
   const input =
     "w-full rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none";
   const fields: { name: keyof typeof values; label: string; placeholder: string; mono?: boolean }[] =
@@ -30,6 +29,7 @@ export default function PriceFilters({
       { name: "itemNameQ", label: "品名", placeholder: "例: ﾎﾞｳﾊﾝﾀﾞ" },
       { name: "supplierQ", label: "取引先（CD・名称）", placeholder: "例: 岡谷" },
       { name: "locQ", label: "納入場所（CD・名称）", placeholder: "例: 直方" },
+      { name: "reasonQ", label: "備考（改訂理由）", placeholder: "例: 銅建値" },
     ];
 
   return (
@@ -43,7 +43,7 @@ export default function PriceFilters({
       {sort && <input type="hidden" name="sort" value={sort} />}
       {dir && <input type="hidden" name="dir" value={dir} />}
       <div className="mb-2 text-sm font-bold text-[#333333]">項目で絞り込む</div>
-      <div className="grid gap-2 sm:grid-cols-4">
+      <div className="grid gap-2 sm:grid-cols-5">
         {fields.map((f) => (
           <div key={f.name}>
             <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">{f.label}</label>
