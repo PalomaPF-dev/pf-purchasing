@@ -2177,7 +2177,13 @@ export async function insertHistoryBatch(companyId: string, rows: MigrationRow[]
     SELECT ${companyId}::uuid, x.item_cd, x.item_branch, x.supplier_cd, x.unit_cd, x.lot_qty, x.currency,
            x.loc_cd, x.dlv_cd, x.wg_cd, x.start_date::date, x.end_date::date, x.price, x.price_before,
            x.memo1, x.memo2, x.memo3, 'migration'
-    FROM ${recordset}
+    -- 同じバッチ内の重複は NOT EXISTS では防げないため、ここで先に落とす
+    FROM (
+      SELECT DISTINCT ON (
+        item_cd, COALESCE(item_branch, '*'), supplier_cd,
+        COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'), COALESCE(lot_qty, -1), start_date
+      ) * FROM ${recordset}
+    ) x
     WHERE NOT EXISTS (
       SELECT 1 FROM price_history h
       WHERE h.company_id = ${companyId}
@@ -2187,6 +2193,9 @@ export async function insertHistoryBatch(companyId: string, rows: MigrationRow[]
         AND h.supplier_cd = x.supplier_cd
         AND COALESCE(h.loc_cd, '*') = COALESCE(x.loc_cd, '*')
         AND COALESCE(h.dlv_cd, '*') = COALESCE(x.dlv_cd, '*')
+        -- ロット違いは別の単価として登録される（同じ品目・取引先・開始日でも
+        -- ロット数ごとに単価が違う）。ロットを見ないと取り込みで落ちてしまう
+        AND COALESCE(h.lot_qty, -1) = COALESCE(x.lot_qty, -1)
         AND h.start_date = x.start_date::date
     )
     RETURNING id`;
