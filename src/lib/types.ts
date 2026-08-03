@@ -172,6 +172,8 @@ export interface PriceHistoryRow {
   source: "migration" | "approval";
   requestLineId: string | null;
   createdAt: string;
+  /** 納入場所マスタの名称（履歴には持たず、表示時に連携して補う） */
+  locName: string | null;
 }
 
 /** 品番マスタ */

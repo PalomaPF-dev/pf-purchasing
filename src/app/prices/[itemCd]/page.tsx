@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft, Paperclip } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { filesForHistoryRows, locationNameMap, priceHistoryFor, requestLineDetail } from "@/lib/db";
+import { filesForHistoryRows, priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
 import type { PriceHistoryRow } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
@@ -74,15 +74,12 @@ export default async function PriceHistoryPage({
     rows.map((r) => r.requestLineId).filter((v): v is string => !!v)
   );
 
-  // 納入場所CDに名称を添える
-  const locNames = await locationNameMap(session.companyId, rows.map((r) => r.locCd));
-
   // 取引先×納入場所×納品先×ロットごとにグループ化して時系列表示。
   // 同じ品目でもロット数が違えば別の単価として登録されるため、ロットも区切りに含める
   // （混ぜると「改訂前単価」が別ロットの単価になってしまう）。
   const groups = new Map<string, typeof rows>();
   for (const r of rows) {
-    const key = `${r.supplierCd}｜${r.supplierName ?? ""}｜${r.locCd ?? "*"}｜${r.dlvCd ?? "*"}｜${r.lotQty ?? ""}`;
+    const key = `${r.supplierCd}｜${r.supplierName ?? ""}｜${r.locCd ?? "*"}｜${r.dlvCd ?? "*"}｜${r.lotQty ?? ""}｜${r.locName ?? ""}`;
     const arr = groups.get(key) ?? [];
     arr.push(r);
     groups.set(key, arr);
@@ -114,7 +111,7 @@ export default async function PriceHistoryPage({
       ) : (
         <div className="space-y-6">
           {sortedGroups.map(([key, list]) => {
-            const [supplierCd, supplierName, locCd, dlvCd, lot] = key.split("｜");
+            const [supplierCd, supplierName, locCd, dlvCd, lot, locName] = key.split("｜");
             return (
               <section key={key} className="rounded-xl border border-[#e5e5e5] bg-white">
                 <div className="border-b border-[#eeeeee] px-4 py-3 text-sm font-bold text-[#333333]">
@@ -122,7 +119,7 @@ export default async function PriceHistoryPage({
                   {locCd !== "*" && (
                     <span className="ml-3 text-xs font-normal text-[#707070]">
                       納入場所: {locCd}
-                      {locNames.get(locCd) ? ` ${locNames.get(locCd)}` : ""}
+                      {locName ? ` ${locName}` : ""}
                     </span>
                   )}
                   {dlvCd !== "*" && (

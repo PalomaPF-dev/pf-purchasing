@@ -119,7 +119,38 @@ function mapHistory(r: any): PriceHistoryRow {
     source: (r.source ?? "approval") as "migration" | "approval",
     requestLineId: r.request_line_id ?? null,
     createdAt: tsStr(r.created_at),
+    locName: r.loc_name ?? null,
   };
+}
+
+/**
+ * 単価履歴にマスタの名称を連携するSQL片。
+ * 履歴には移行時点の名称しか入っておらず、空のことも多いため、
+ * 品番マスタ・取引先マスタ・納入場所マスタから表示用の名称を補う
+ * （履歴側に名称が入っていればそちらを優先し、マスタ変更で過去の記録は書き換えない）。
+ *
+ * 使う側は FROM price_history h を前提に、この片を JOIN 句として差し込む。
+ */
+function historyMasterJoins() {
+  const sql = getSql();
+  return sql`
+    LEFT JOIN LATERAL (
+      SELECT i.name FROM items i
+      WHERE i.company_id = h.company_id AND i.code = h.item_cd
+      ORDER BY (i.branch = COALESCE(h.item_branch, '*')) DESC
+      LIMIT 1
+    ) mi ON true
+    LEFT JOIN suppliers ms ON ms.company_id = h.company_id AND ms.code = h.supplier_cd
+    LEFT JOIN locations ml ON ml.company_id = h.company_id AND ml.code = h.loc_cd`;
+}
+
+/** 上の JOIN を前提にした選択列（名称はマスタで補完） */
+function historyMasterCols() {
+  const sql = getSql();
+  return sql`
+    COALESCE(NULLIF(h.item_name, ''), mi.name) AS item_name,
+    COALESCE(NULLIF(h.supplier_name, ''), ms.name) AS supplier_name,
+    NULLIF(ml.name, '') AS loc_name`;
 }
 
 // ===== ダッシュボード =====
@@ -1036,23 +1067,47 @@ export async function listPrices(
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
   const activeOnly = opts.activeOnly ?? false;
+  // 検索はマスタの名称も対象にする（移行データは品名・取引先名が空のことがあるため）。
+  // 21万行にマスタを結合してから絞り込むと重いので、先にマスタ側で名称に一致する
+  // CDを引いてから、履歴はCDの一致で絞り込む（結合は下の page CTE で1ページ分だけ）。
+  const [itemCodes, supplierCodes, locCodes] = q
+    ? await Promise.all([
+        sql`SELECT code FROM items WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
+        sql`SELECT code FROM suppliers WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
+        sql`SELECT code FROM locations WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
+      ])
+    : [[], [], []];
+  const codes = (rows: unknown) => [...new Set((rows as any[]).map((r) => r.code as string))];
+  const searchCond = q
+    ? sql`AND (h.item_cd ILIKE ${q} OR h.item_name ILIKE ${q}
+              OR h.item_cd = ANY(${codes(itemCodes)}::text[])
+              OR h.supplier_cd ILIKE ${q} OR h.supplier_name ILIKE ${q}
+              OR h.supplier_cd = ANY(${codes(supplierCodes)}::text[])
+              OR h.loc_cd ILIKE ${q} OR h.loc_cd = ANY(${codes(locCodes)}::text[]))`
+    : sql``;
   const where = sql`
-    company_id = ${companyId}
-    AND (${q}::text IS NULL OR item_cd ILIKE ${q} OR item_name ILIKE ${q}
-         OR supplier_cd ILIKE ${q} OR supplier_name ILIKE ${q})
-    AND (${opts.supplierCd ?? null}::text IS NULL OR supplier_cd = ${opts.supplierCd ?? null})
+    h.company_id = ${companyId}
+    ${searchCond}
+    AND (${opts.supplierCd ?? null}::text IS NULL OR h.supplier_cd = ${opts.supplierCd ?? null})
     AND (${opts.buyerLoginId ?? null}::text IS NULL OR EXISTS (
       SELECT 1 FROM suppliers sp
-      WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+      WHERE sp.company_id = h.company_id AND sp.code = h.supplier_cd
         AND ${opts.buyerLoginId ?? null} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
-    AND (NOT ${activeOnly} OR (start_date <= CURRENT_DATE AND (end_date IS NULL OR end_date >= CURRENT_DATE)))`;
+    AND (NOT ${activeOnly} OR (h.start_date <= CURRENT_DATE AND (h.end_date IS NULL OR h.end_date >= CURRENT_DATE)))`;
   const [rows, cnt] = await Promise.all([
-    // 最新の単価を先頭に、下へ行くほど古くなる並び
+    // 最新の単価を先頭に、下へ行くほど古くなる並び。
+    // 先に1ページ分を切り出してから、その行にだけマスタ名称を連携する
     sql`
-      SELECT * FROM price_history WHERE ${where}
-      ORDER BY start_date DESC, created_at DESC, item_cd, supplier_cd
-      LIMIT ${limit} OFFSET ${offset}`,
-    sql`SELECT COUNT(*)::int AS n FROM price_history WHERE ${where}`,
+      WITH page AS (
+        SELECT h.* FROM price_history h
+        WHERE ${where}
+        ORDER BY h.start_date DESC, h.created_at DESC, h.item_cd, h.supplier_cd
+        LIMIT ${limit} OFFSET ${offset}
+      )
+      SELECT h.*, ${historyMasterCols()}
+      FROM page h ${historyMasterJoins()}
+      ORDER BY h.start_date DESC, h.created_at DESC, h.item_cd, h.supplier_cd`,
+    sql`SELECT COUNT(*)::int AS n FROM price_history h WHERE ${where}`,
   ]);
   return { rows: (rows as any[]).map(mapHistory), total: Number((cnt as any)[0]?.n ?? 0) };
 }
@@ -1071,15 +1126,16 @@ export async function priceHistoryFor(
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
-    SELECT * FROM price_history
-    WHERE company_id = ${companyId} AND item_cd = ${itemCd}
-      AND (${supplierCd}::text IS NULL OR supplier_cd = ${supplierCd})
+    SELECT h.*, ${historyMasterCols()}
+    FROM price_history h ${historyMasterJoins()}
+    WHERE h.company_id = ${companyId} AND h.item_cd = ${itemCd}
+      AND (${supplierCd}::text IS NULL OR h.supplier_cd = ${supplierCd})
       AND (${buyerLoginId}::text IS NULL OR EXISTS (
         SELECT 1 FROM suppliers sp
-        WHERE sp.company_id = price_history.company_id AND sp.code = price_history.supplier_cd
+        WHERE sp.company_id = h.company_id AND sp.code = h.supplier_cd
           AND ${buyerLoginId} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
-    ORDER BY supplier_cd, COALESCE(loc_cd, '*'), COALESCE(dlv_cd, '*'),
-             COALESCE(lot_qty, -1), start_date DESC
+    ORDER BY h.supplier_cd, COALESCE(h.loc_cd, '*'), COALESCE(h.dlv_cd, '*'),
+             COALESCE(h.lot_qty, -1), h.start_date DESC
     LIMIT 1000`;
   return (rows as any[]).map(mapHistory);
 }
@@ -1182,9 +1238,11 @@ export async function listItems(
   const offset = Math.max(opts.offset ?? 0, 0);
   const q = opts.q ? `%${opts.q}%` : null;
   const [rows, cnt] = await Promise.all([
-    // 現在の取引先は単価履歴の最新行（適用開始日が最も新しい行）から引く
+    // 現在の取引先は単価履歴の最新行（適用開始日が最も新しい行）から引く。
+    // 取引先名は履歴に入っていないことがあるので、取引先マスタから補って表示する
     sql`
-      SELECT i.*, h.supplier_cd AS current_supplier_cd, h.supplier_name AS current_supplier_name,
+      SELECT i.*, h.supplier_cd AS current_supplier_cd,
+             COALESCE(NULLIF(h.supplier_name, ''), s.name) AS current_supplier_name,
              h.start_date AS current_start_date
       FROM items i
       LEFT JOIN LATERAL (
@@ -1194,6 +1252,7 @@ export async function listItems(
         ORDER BY ph.start_date DESC, ph.created_at DESC
         LIMIT 1
       ) h ON true
+      LEFT JOIN suppliers s ON s.company_id = i.company_id AND s.code = h.supplier_cd
       WHERE i.company_id = ${companyId}
         AND (${q}::text IS NULL OR i.code ILIKE ${q} OR i.name ILIKE ${q})
       ORDER BY i.code, i.branch LIMIT ${limit} OFFSET ${offset}`,
