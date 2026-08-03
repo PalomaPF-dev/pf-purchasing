@@ -1247,6 +1247,27 @@ export async function currentPriceFor(
   return r ? mapHistory(r) : null;
 }
 
+/**
+ * 旧単価の自動取得。
+ * 新単価の適用日の「前日」時点で有効な単価を返す（適用日当日で引くと、
+ * 直前の単価が既に適用終了になっている場合に取りこぼすため）。
+ */
+export async function previousPriceFor(
+  companyId: string,
+  itemCd: string,
+  supplierCd: string,
+  opts: { branch?: string | null; locCd?: string | null; startDate: string }
+): Promise<PriceHistoryRow | null> {
+  const d = new Date(`${opts.startDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return null;
+  d.setUTCDate(d.getUTCDate() - 1);
+  return currentPriceFor(companyId, itemCd, supplierCd, {
+    branch: opts.branch ?? null,
+    locCd: opts.locCd ?? null,
+    onDate: d.toISOString().slice(0, 10),
+  });
+}
+
 /** 直近の申請済み内容（承認用紙の「直近申請内容」欄）。指定開始日より前で最新の履歴。 */
 export async function previousHistoryFor(
   companyId: string,
@@ -1471,13 +1492,14 @@ export async function upsertItemsBatch(companyId: string, items: ItemInput[]): P
 export async function updateItem(
   companyId: string,
   id: string,
-  item: Omit<ItemInput, "code" | "branch" | "unitCd" | "taxCd"> & { active: boolean }
+  item: Omit<ItemInput, "code" | "branch" | "taxCd"> & { active: boolean }
 ): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   const rows = await sql`
     UPDATE items SET
       name = ${item.name.trim()},
+      unit_cd = ${item.unitCd ?? null},
       notes = ${item.notes ?? null},
       acct_cd = ${item.acctCd ?? null},
       acct_name = ${item.acctName ?? null},
@@ -1893,7 +1915,9 @@ export async function searchSupplierItems(
   const pat = q ? `%${q}%` : null;
   const rows = await sql`
     SELECT DISTINCT ON (h.item_cd, COALESCE(h.item_branch, '*'), COALESCE(h.loc_cd, '*'))
-      h.item_cd, h.item_branch, h.unit_cd, h.lot_qty, h.price, h.start_date, h.loc_cd, h.dlv_cd,
+      h.item_cd, h.item_branch, h.lot_qty, h.price, h.start_date, h.loc_cd, h.dlv_cd,
+      -- 単位は品番マスタを優先（マスタで直したら申請にも連動する）
+      COALESCE(NULLIF(i.unit_cd, ''), h.unit_cd) AS unit_cd,
       COALESCE(NULLIF(i.name, ''), h.item_name, '') AS name
     FROM price_history h
     LEFT JOIN items i

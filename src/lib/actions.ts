@@ -412,6 +412,7 @@ export async function updateItemAction(
   id: string,
   item: {
     name: string;
+    unitCd: string;
     notes: string;
     acctCd: string;
     acctName: string;
@@ -427,6 +428,7 @@ export async function updateItemAction(
   const nz = (v: string) => v.trim() || null;
   await updateItem(s.companyId, id, {
     name: item.name,
+    unitCd: nz(item.unitCd),
     notes: nz(item.notes),
     acctCd: nz(item.acctCd),
     acctName: nz(item.acctName),

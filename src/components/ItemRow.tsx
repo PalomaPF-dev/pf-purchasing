@@ -18,6 +18,7 @@ export default function ItemRow({ item }: { item: Item }) {
 
   const [f, setF] = useState({
     name: item.name,
+    unitCd: item.unitCd ?? "",
     acctCd: item.acctCd ?? "",
     acctName: item.acctName ?? "",
     acctDetail: item.acctDetail ?? "",
@@ -33,6 +34,7 @@ export default function ItemRow({ item }: { item: Item }) {
   function reset() {
     setF({
       name: item.name,
+      unitCd: item.unitCd ?? "",
       acctCd: item.acctCd ?? "",
       acctName: item.acctName ?? "",
       acctDetail: item.acctDetail ?? "",
@@ -78,6 +80,7 @@ export default function ItemRow({ item }: { item: Item }) {
           {item.name || dash}
           {!item.active && <span className="ml-2 text-xs text-[#a0a0a0]">（無効）</span>}
         </td>
+        <td className="px-2 py-2 text-center text-xs">{item.unitCd || dash}</td>
         <td className="px-2 py-2 font-mono text-xs">{item.currentSupplierCd ?? dash}</td>
         <td className="px-2 py-2 text-xs">{item.currentSupplierName || dash}</td>
         <td className="px-2 py-2 font-mono text-xs">{item.acctCd ?? dash}</td>
@@ -123,6 +126,9 @@ export default function ItemRow({ item }: { item: Item }) {
       <td className="px-2 py-2 font-mono text-xs text-[#707070]">{item.branch ?? "—"}</td>
       <td className="px-2 py-2">
         <input autoFocus value={f.name} onChange={set("name")} onKeyDown={onKey} className={cell} />
+      </td>
+      <td className="px-2 py-2">
+        <input value={f.unitCd} onChange={set("unitCd")} onKeyDown={onKey} className={cell} />
       </td>
       <td className="px-2 py-2 font-mono text-xs text-[#707070]">{item.currentSupplierCd ?? "—"}</td>
       <td className="px-2 py-2 text-xs text-[#707070]">{item.currentSupplierName || "—"}</td>

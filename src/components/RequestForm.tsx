@@ -518,7 +518,7 @@ export default function RequestForm({
 
           {/* 明細（表形式） */}
           <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-            <table className="w-full min-w-[2320px] border-collapse text-sm">
+            <table className="w-full min-w-[2240px] border-collapse text-sm">
               <thead>
                 {/* 帳票と同じ並び: 新単価 → 旧単価 → 単価差 → 内訳 → 月当たり → 登録項目 */}
                 <tr className="border-b border-[#f0f0f0] bg-[#fafafa] text-center">
@@ -541,7 +541,7 @@ export default function RequestForm({
                   <th className={`${thGroup} border-l border-[#eeeeee] bg-amber-50/50`} colSpan={3}>
                     月 当 た り
                   </th>
-                  <th className={`${thGroup} border-l border-[#eeeeee]`} colSpan={5}>
+                  <th className={`${thGroup} border-l border-[#eeeeee]`} colSpan={4}>
                     登録項目（mcframe）
                   </th>
                   <th className={`${th} w-40 border-l border-[#eeeeee]`} rowSpan={2}>備考</th>
@@ -563,8 +563,7 @@ export default function RequestForm({
                   <th className={`${th} w-24 text-right`}>月額</th>
                   <th className={`${th} w-24 text-right`}>改訂影響額</th>
                   <th className={`${th} w-16 border-l border-[#eeeeee]`}>枝番</th>
-                  <th className={`${th} w-20`}>納品先CD</th>
-                  <th className={`${th} w-16`}>単位CD</th>
+                  <th className={`${th} w-16`}>単位</th>
                   <th className={`${th} w-16 text-right`}>ロット数</th>
                   <th className={`${th} w-32`}>適用終了日</th>
                 </tr>
@@ -728,13 +727,6 @@ export default function RequestForm({
                         </td>
                         <td className={td}>
                           <input
-                            className={`${cell} px-1 font-mono`}
-                            value={l.dlvCd}
-                            onChange={(e) => update(i, { dlvCd: e.target.value })}
-                          />
-                        </td>
-                        <td className={td}>
-                          <input
                             className={`${cell} px-1`}
                             value={l.unitCd}
                             onChange={(e) => update(i, { unitCd: e.target.value })}
@@ -809,8 +801,8 @@ export default function RequestForm({
                       ? "—"
                       : `${totalImpact > 0 ? "+" : ""}${totalImpact.toLocaleString()}`}
                   </td>
-                  {/* 登録項目5列＋備考＋操作 */}
-                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={7}>
+                  {/* 登録項目4列＋備考＋操作 */}
+                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={6}>
                     年換算 {totalImpact == null ? "—" : `${(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}`}
                   </td>
                 </tr>

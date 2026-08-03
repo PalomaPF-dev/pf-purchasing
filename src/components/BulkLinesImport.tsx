@@ -55,6 +55,7 @@ export default function BulkLinesImport({
           <p className="font-medium">Excel/CSVで明細をまとめて入力できます</p>
           <p className="mt-0.5 text-xs">
             テンプレートに1行＝1明細で転記してアップロードすると、明細表にまとめて追加されます。
+            旧単価は入力不要です（取込時に単価履歴から自動で入ります）。
             追加後は表の上で確認・修正してから提出してください（この操作だけでは申請されません）。
           </p>
         </div>

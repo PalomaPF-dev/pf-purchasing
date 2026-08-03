@@ -3,6 +3,7 @@ import ExcelJS from "exceljs";
 import { getSessionWithRole } from "@/lib/session";
 import {
   createRequest,
+  previousPriceFor,
   upsertItemsBatch,
   upsertSupplier,
   employeeNameMap,
@@ -28,10 +29,12 @@ export const maxDuration = 120;
  * 1行目はヘッダ（テンプレートは /api/import-excel?template=... でダウンロード）。
  */
 
+// 旧単価（現行単価）は取込時に単価履歴から自動で引くため、テンプレートには含めない。
+// 納品先CDは運用で使っていないため対象外。
 const PRICE_HEADERS = [
   "品目CD", "枝番", "品名", "取引先CD", "取引先名", "納入場所CD", "納入場所名",
-  "納品先CD", "納品先名", "単位CD", "ロット数", "通貨", "適用開始日", "適用終了日",
-  "現行単価", "購入単価", "有償支給価格", "月当たり数量",
+  "単位", "ロット数", "通貨", "適用開始日", "適用終了日",
+  "購入単価", "有償支給価格", "月当たり数量",
   "支給材建値", "材料建値", "単価改定", "設計変更", "為替変動", "その他", "備考",
 ];
 const ITEM_HEADERS = ITEM_IMPORT_HEADERS;
@@ -463,14 +466,15 @@ export async function POST(req: Request) {
           supplierName: get(r, "取引先名") || null,
           locCd: get(r, "納入場所CD") || null,
           locName: get(r, "納入場所名") || null,
-          dlvCd: get(r, "納品先CD") || null,
-          dlvName: get(r, "納品先名") || null,
-          unitCd: get(r, "単位CD") || null,
+          dlvCd: null,
+          dlvName: null,
+          unitCd: get(r, "単位", "単位CD", "単位ＣＤ") || null,
           lotQty: toNum(get(r, "ロット数")),
           currency: get(r, "通貨") || "JPY",
           startDate,
           endDate: normDate(get(r, "適用終了日")),
-          currentPrice: toNum(get(r, "現行単価")),
+          // 旧単価は取り込んだあとに単価履歴から補完する（下の fillCurrentPrices）
+          currentPrice: null,
           newPrice,
           paidSupplyPrice: toNum(get(r, "有償支給価格")),
           monthlyQty: toNum(get(r, "月当たり数量", "月数量")),
@@ -490,16 +494,35 @@ export async function POST(req: Request) {
         { status: 422 }
       );
     }
+    // 旧単価は入力させず、単価履歴の「適用日時点で有効な単価」を自動で入れる
+    let filled = 0;
+    await Promise.all(
+      lines.map(async (l) => {
+        const cur = await previousPriceFor(session.companyId, l.itemCd, l.supplierCd, {
+          branch: l.itemBranch ?? null,
+          locCd: l.locCd ?? null,
+          startDate: l.startDate,
+        });
+        if (cur) {
+          l.currentPrice = cur.price;
+          // 品名・単位・ロットも履歴の登録内容で補う（ファイルに書かれていれば優先）
+          l.itemName = l.itemName || cur.itemName;
+          l.unitCd = l.unitCd || cur.unitCd;
+          l.lotQty = l.lotQty ?? cur.lotQty;
+          filled++;
+        }
+      })
+    );
     // parseOnly: 申請は作らず、解析した明細だけを返す（申請フォームの一括入力タブ用）
     if (String(form.get("parseOnly") ?? "") === "1") {
-      return NextResponse.json({ ok: true, kind, count: lines.length, lines, errors });
+      return NextResponse.json({ ok: true, kind, count: lines.length, lines, errors, filled });
     }
     const requestId = await createRequest(
       session.companyId,
       { title: `一括取込（${file.name}）`, lines },
       { loginId: session.loginId, name: session.userName }
     );
-    return NextResponse.json({ ok: true, kind, count: lines.length, requestId, errors });
+    return NextResponse.json({ ok: true, kind, count: lines.length, requestId, errors, filled });
   } catch (e) {
     console.error("[import-excel]", e);
     return NextResponse.json(

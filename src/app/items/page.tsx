@@ -58,6 +58,11 @@ export default async function ItemsPage({
           <input name="name" required className={inputCls} />
         </div>
         <div>
+          {/* 単価申請の明細に自動で入る（品目を選んだときに連動） */}
+          <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">単位</label>
+          <input name="unitCd" placeholder="P" className={inputCls} />
+        </div>
+        <div>
           <label className="mb-0.5 block text-[11px] font-medium text-[#707070]">科目</label>
           <input name="acctCd" placeholder="0010" className={`${inputCls} font-mono`} />
         </div>
@@ -102,6 +107,7 @@ export default async function ItemsPage({
               <th className="px-4 py-2.5 font-medium">品目CD</th>
               <th className="px-2 py-2.5 font-medium">枝番</th>
               <th className="px-2 py-2.5 font-medium">品名</th>
+              <th className="px-2 py-2.5 font-medium">単位</th>
               <th className="px-2 py-2.5 font-medium">取引先CD</th>
               <th className="px-2 py-2.5 font-medium">取引先名</th>
               <th className="px-2 py-2.5 font-medium">科目</th>
