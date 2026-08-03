@@ -3,6 +3,7 @@ import { requireSession, supplierScopeOf } from "@/lib/session";
 import { listPrices } from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
@@ -46,18 +47,15 @@ export default async function PricesPage({
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <form action="/prices" method="GET" className="flex items-center gap-2">
-          {activeOnly && <input type="hidden" name="active" value="1" />}
-          <input
-            name="q"
-            defaultValue={q}
-            placeholder="品目CD・品名・取引先CD・取引先名で検索"
-            className="w-80 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
-          />
-          <button className="rounded-lg bg-[#e11d48] px-4 py-1.5 text-sm font-semibold text-white hover:bg-[#be123c]">
-            検索
-          </button>
-        </form>
+        <SearchBox
+          action="/prices"
+          q={q}
+          total={total}
+          placeholder="品目CD・品名・取引先・納入場所で検索"
+          hidden={{ active: activeOnly ? "1" : undefined }}
+          scope="prices"
+          className=""
+        />
         <Link
           href={`/prices${qs({ active: activeOnly ? "" : "1" })}`}
           className={`rounded-full px-3 py-1.5 text-xs font-medium ${

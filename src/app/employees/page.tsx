@@ -166,7 +166,7 @@ export default async function EmployeesPage({
         </div>
       </form>
 
-      <SearchBox action="/employees" q={q} placeholder="社員番号・氏名で検索" total={rows.length} />
+      <SearchBox action="/employees" q={q} placeholder="社員番号・氏名で検索" total={rows.length} scope="employees" />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">

@@ -1865,6 +1865,78 @@ export async function searchActiveSuppliers(
 }
 
 /** 取引先のインクリメンタル検索 */
+/* ===== 一覧画面の検索候補（サジェスト） ===== */
+
+export type SuggestScope = "prices" | "items" | "suppliers" | "locations" | "employees";
+
+export interface SearchSuggestion {
+  kind: "item" | "supplier" | "location" | "employee";
+  code: string;
+  name: string;
+}
+
+/**
+ * 検索ボックスの候補。画面ごとに探す対象を変える。
+ * 単価履歴はCDでも名称でも探せるよう、品番・取引先・納入場所をまとめて返す。
+ * 前方一致を先に出し、続いて部分一致（コード順）。
+ */
+export async function searchSuggestions(
+  companyId: string,
+  scope: SuggestScope,
+  q: string,
+  opts: { buyerLoginId?: string | null } = {}
+): Promise<SearchSuggestion[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const term = q.trim();
+  if (!term) return [];
+  const pat = `%${term}%`;
+  const pre = `${term}%`;
+  const buyer = opts.buyerLoginId ?? null;
+  // 単価履歴は3種類を少しずつ、単独マスタの画面は多めに出す
+  const each = scope === "prices" ? 5 : 12;
+
+  const wantItems = scope === "prices" || scope === "items";
+  const wantSuppliers = scope === "prices" || scope === "suppliers";
+  const wantLocations = scope === "prices" || scope === "locations";
+  const wantEmployees = scope === "employees";
+
+  const [items, suppliers, locations, employees] = await Promise.all([
+    wantItems
+      ? sql`SELECT code, name FROM items
+            WHERE company_id = ${companyId} AND active AND (code ILIKE ${pat} OR name ILIKE ${pat})
+            ORDER BY (code ILIKE ${pre}) DESC, code LIMIT ${each}`
+      : Promise.resolve([]),
+    wantSuppliers
+      ? sql`SELECT code, name FROM suppliers
+            WHERE company_id = ${companyId} AND active AND (code ILIKE ${pat} OR name ILIKE ${pat})
+              -- 一般ユーザーには担当取引先だけを出す
+              AND (${buyer}::text IS NULL
+                   OR ${buyer} IN (buyer_login_id, buyer_sub_login_id, chaser_login_id))
+            ORDER BY (code ILIKE ${pre}) DESC, code LIMIT ${each}`
+      : Promise.resolve([]),
+    wantLocations
+      ? sql`SELECT code, name FROM locations
+            WHERE company_id = ${companyId} AND active AND (code ILIKE ${pat} OR name ILIKE ${pat})
+            ORDER BY (code ILIKE ${pre}) DESC, code LIMIT ${each}`
+      : Promise.resolve([]),
+    wantEmployees
+      ? sql`SELECT login_id AS code, name FROM employees
+            WHERE company_id = ${companyId} AND active AND (login_id ILIKE ${pat} OR name ILIKE ${pat})
+            ORDER BY (login_id ILIKE ${pre}) DESC, login_id LIMIT ${each}`
+      : Promise.resolve([]),
+  ]);
+
+  const map = (rows: unknown, kind: SearchSuggestion["kind"]): SearchSuggestion[] =>
+    (rows as any[]).map((r) => ({ kind, code: r.code as string, name: (r.name as string) ?? "" }));
+  return [
+    ...map(items, "item"),
+    ...map(suppliers, "supplier"),
+    ...map(locations, "location"),
+    ...map(employees, "employee"),
+  ];
+}
+
 export async function searchSuppliers(companyId: string, q: string, limit = 12): Promise<Supplier[]> {
   await ensureSchema();
   const sql = getSql();

@@ -93,7 +93,7 @@ export default async function ItemsPage({
       </form>
 
       {/* 検索 */}
-      <SearchBox action="/items" q={q} placeholder="品目CD・品名で検索" total={total} />
+      <SearchBox action="/items" q={q} placeholder="品目CD・品名で検索" total={total} scope="items" />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">
