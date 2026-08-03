@@ -88,9 +88,9 @@ export default async function LocationsPage({
               <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
                 <th className="px-2 py-2.5 font-medium">納入場所CD</th>
                 <th className="px-2 py-2.5 font-medium">納入場所名</th>
-                <th className="px-2 py-2.5 font-medium">備考</th>
                 <th className="px-2 py-2.5 font-medium">更新ユーザー</th>
                 <th className="px-2 py-2.5 font-medium">更新日時</th>
+                <th className="px-2 py-2.5 font-medium">備考</th>
                 <th className="px-2 py-2.5 font-medium">状態</th>
                 <th className="px-2 py-2.5 text-right font-medium">操作</th>
               </tr>
