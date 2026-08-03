@@ -1049,14 +1049,38 @@ export function canApproveStage(
 
 // ===== 単価履歴 =====
 
+/** 単価履歴一覧の並び替えキー */
+export type PriceSort =
+  | "startDate"
+  | "endDate"
+  | "itemCd"
+  | "itemName"
+  | "supplier"
+  | "loc"
+  | "price"
+  | "source";
+
+export type SortDir = "asc" | "desc";
+
+/** 既定は「最新の適用日が先頭」 */
+export const PRICE_SORT_DEFAULT: PriceSort = "startDate";
+
 export async function listPrices(
   companyId: string,
   opts: {
+    /** 全項目をまとめて検索（CD・名称のどちらでも） */
     q?: string | null;
+    /** 項目別検索 */
+    itemQ?: string | null;
+    itemNameQ?: string | null;
+    supplierQ?: string | null;
+    locQ?: string | null;
     supplierCd?: string | null;
     /** 指定時、その担当バイヤーの取引先の履歴のみ返す */
     buyerLoginId?: string | null;
     activeOnly?: boolean;
+    sort?: PriceSort | null;
+    dir?: SortDir | null;
     limit?: number;
     offset?: number;
   } = {}
@@ -1065,26 +1089,57 @@ export async function listPrices(
   const sql = getSql();
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
-  const q = opts.q ? `%${opts.q}%` : null;
+  const like = (v: string | null | undefined) => (v && v.trim() ? `%${v.trim()}%` : null);
+  const q = like(opts.q);
+  const itemQ = like(opts.itemQ);
+  const itemNameQ = like(opts.itemNameQ);
+  const supplierQ = like(opts.supplierQ);
+  const locQ = like(opts.locQ);
   const activeOnly = opts.activeOnly ?? false;
+
   // 検索はマスタの名称も対象にする（移行データは品名・取引先名が空のことがあるため）。
   // 21万行にマスタを結合してから絞り込むと重いので、先にマスタ側で名称に一致する
   // CDを引いてから、履歴はCDの一致で絞り込む（結合は下の page CTE で1ページ分だけ）。
-  const [itemCodes, supplierCodes, locCodes] = q
-    ? await Promise.all([
-        sql`SELECT code FROM items WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
-        sql`SELECT code FROM suppliers WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
-        sql`SELECT code FROM locations WHERE company_id = ${companyId} AND name ILIKE ${q} LIMIT 5000`,
-      ])
-    : [[], [], []];
-  const codes = (rows: unknown) => [...new Set((rows as any[]).map((r) => r.code as string))];
-  const searchCond = q
-    ? sql`AND (h.item_cd ILIKE ${q} OR h.item_name ILIKE ${q}
-              OR h.item_cd = ANY(${codes(itemCodes)}::text[])
-              OR h.supplier_cd ILIKE ${q} OR h.supplier_name ILIKE ${q}
-              OR h.supplier_cd = ANY(${codes(supplierCodes)}::text[])
-              OR h.loc_cd ILIKE ${q} OR h.loc_cd = ANY(${codes(locCodes)}::text[]))`
-    : sql``;
+  const nameCodes = async (table: "items" | "suppliers" | "locations", pat: string | null) => {
+    if (!pat) return [] as string[];
+    const rows =
+      table === "items"
+        ? await sql`SELECT code FROM items WHERE company_id = ${companyId} AND name ILIKE ${pat} LIMIT 5000`
+        : table === "suppliers"
+          ? await sql`SELECT code FROM suppliers WHERE company_id = ${companyId} AND name ILIKE ${pat} LIMIT 5000`
+          : await sql`SELECT code FROM locations WHERE company_id = ${companyId} AND name ILIKE ${pat} LIMIT 5000`;
+    return [...new Set((rows as any[]).map((r) => r.code as string))];
+  };
+  const [qItems, qSuppliers, qLocs, nItems, sSuppliers, lLocs] = await Promise.all([
+    nameCodes("items", q),
+    nameCodes("suppliers", q),
+    nameCodes("locations", q),
+    nameCodes("items", itemNameQ),
+    nameCodes("suppliers", supplierQ),
+    nameCodes("locations", locQ),
+  ]);
+
+  const conds = [
+    q
+      ? sql`AND (h.item_cd ILIKE ${q} OR h.item_name ILIKE ${q} OR h.item_cd = ANY(${qItems}::text[])
+                OR h.supplier_cd ILIKE ${q} OR h.supplier_name ILIKE ${q}
+                OR h.supplier_cd = ANY(${qSuppliers}::text[])
+                OR h.loc_cd ILIKE ${q} OR h.loc_cd = ANY(${qLocs}::text[]))`
+      : null,
+    itemQ ? sql`AND h.item_cd ILIKE ${itemQ}` : null,
+    itemNameQ
+      ? sql`AND (h.item_name ILIKE ${itemNameQ} OR h.item_cd = ANY(${nItems}::text[]))`
+      : null,
+    supplierQ
+      ? sql`AND (h.supplier_cd ILIKE ${supplierQ} OR h.supplier_name ILIKE ${supplierQ}
+                OR h.supplier_cd = ANY(${sSuppliers}::text[]))`
+      : null,
+    locQ ? sql`AND (h.loc_cd ILIKE ${locQ} OR h.loc_cd = ANY(${lLocs}::text[]))` : null,
+  ].filter((c): c is NonNullable<typeof c> => c != null);
+  // 断片を1つにまとめる（空でも動くように種を置く）
+  let searchCond = sql``;
+  for (const c of conds) searchCond = sql`${searchCond} ${c}`;
+
   const where = sql`
     h.company_id = ${companyId}
     ${searchCond}
@@ -1094,19 +1149,45 @@ export async function listPrices(
       WHERE sp.company_id = h.company_id AND sp.code = h.supplier_cd
         AND ${opts.buyerLoginId ?? null} IN (sp.buyer_login_id, sp.buyer_sub_login_id, sp.chaser_login_id)))
     AND (NOT ${activeOnly} OR (h.start_date <= CURRENT_DATE AND (h.end_date IS NULL OR h.end_date >= CURRENT_DATE)))`;
+
+  // 並び替え。品名だけはマスタ連携後の値で並べるため、絞り込みの段階で結合する
+  const sort = opts.sort ?? PRICE_SORT_DEFAULT;
+  const desc = (opts.dir ?? (sort === "startDate" ? "desc" : "asc")) === "desc";
+  const byName = sort === "itemName";
+  const dirFrag = desc ? sql`DESC NULLS LAST` : sql`ASC NULLS LAST`;
+  const keyFrag =
+    sort === "itemCd"
+      ? sql`h.item_cd`
+      : sort === "itemName"
+        ? sql`COALESCE(NULLIF(h.item_name, ''), mi.name)`
+        : sort === "supplier"
+          ? sql`h.supplier_cd`
+          : sort === "loc"
+            ? sql`h.loc_cd`
+            : sort === "price"
+              ? sql`h.price`
+              : sort === "endDate"
+                ? sql`h.end_date`
+                : sort === "source"
+                  ? sql`h.source`
+                  : sql`h.start_date`;
+  // 同値のときの並びを固定して、ページ送りで行が重複・欠落しないようにする
+  const orderBy = sql`ORDER BY ${keyFrag} ${dirFrag}, h.start_date DESC, h.id`;
+  // 品名で並べるときだけ、1ページを切り出す段階でもマスタを結合する
+  const cteJoins = byName ? historyMasterJoins() : sql``;
+
   const [rows, cnt] = await Promise.all([
-    // 最新の単価を先頭に、下へ行くほど古くなる並び。
     // 先に1ページ分を切り出してから、その行にだけマスタ名称を連携する
     sql`
       WITH page AS (
-        SELECT h.* FROM price_history h
+        SELECT h.* FROM price_history h ${cteJoins}
         WHERE ${where}
-        ORDER BY h.start_date DESC, h.created_at DESC, h.item_cd, h.supplier_cd
+        ${orderBy}
         LIMIT ${limit} OFFSET ${offset}
       )
       SELECT h.*, ${historyMasterCols()}
       FROM page h ${historyMasterJoins()}
-      ORDER BY h.start_date DESC, h.created_at DESC, h.item_cd, h.supplier_cd`,
+      ${orderBy}`,
     sql`SELECT COUNT(*)::int AS n FROM price_history h WHERE ${where}`,
   ]);
   return { rows: (rows as any[]).map(mapHistory), total: Number((cnt as any)[0]?.n ?? 0) };
