@@ -11,6 +11,7 @@ export interface PickedItem {
   lotQty: number | null;
   currentPrice: number | null;
   startDate: string | null;
+  endDate: string | null;
   locCd: string | null;
   dlvCd: string | null;
 }

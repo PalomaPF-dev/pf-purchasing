@@ -1901,6 +1901,8 @@ export interface SupplierItem {
   currentPrice: number | null;
   /** その単価の適用開始日 */
   startDate: string | null;
+  /** その単価の適用終了日（次の改訂の適用日を決めるのに使う） */
+  endDate: string | null;
   locCd: string | null;
   dlvCd: string | null;
 }
@@ -1921,7 +1923,7 @@ export async function searchSupplierItems(
   const pat = q ? `%${q}%` : null;
   const rows = await sql`
     SELECT DISTINCT ON (h.item_cd, COALESCE(h.item_branch, '*'), COALESCE(h.loc_cd, '*'))
-      h.item_cd, h.item_branch, h.lot_qty, h.price, h.start_date, h.loc_cd, h.dlv_cd,
+      h.item_cd, h.item_branch, h.lot_qty, h.price, h.start_date, h.end_date, h.loc_cd, h.dlv_cd,
       -- 単位は品番マスタを優先（マスタで直したら申請にも連動する）
       COALESCE(NULLIF(i.unit_cd, ''), h.unit_cd) AS unit_cd,
       COALESCE(NULLIF(i.name, ''), h.item_name, '') AS name
@@ -1942,6 +1944,7 @@ export async function searchSupplierItems(
     lotQty: num(r.lot_qty),
     currentPrice: num(r.price),
     startDate: r.start_date ? dateStr(r.start_date) : null,
+    endDate: r.end_date ? dateStr(r.end_date) : null,
     locCd: r.loc_cd && r.loc_cd !== "*" ? r.loc_cd : null,
     dlvCd: r.dlv_cd && r.dlv_cd !== "*" ? r.dlv_cd : null,
   }));
