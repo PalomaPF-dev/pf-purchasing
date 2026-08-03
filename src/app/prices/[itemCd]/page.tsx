@@ -3,36 +3,12 @@ import { ArrowLeft, Paperclip } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
 import { filesForHistoryRows, priceHistoryFor, requestLineDetail } from "@/lib/db";
 import { formatDate, formatDiff, formatPrice } from "@/lib/format";
-import type { PriceHistoryRow } from "@/lib/types";
 import PageHeader from "@/components/PageHeader";
-
-/** 単価差の要因（内訳）をタグ表示。値のある要因だけを出す。 */
-function BreakdownTags({ row }: { row: PriceHistoryRow }) {
-  const items: [string, number | null][] = [
-    ["支給材建値", row.bdSupplyMat],
-    ["材料建値", row.bdMaterial],
-    ["単価改定", row.bdRevision],
-    ["設計変更", row.bdDesign],
-    ["為替変動", row.bdForex],
-    ["その他", row.bdOther],
-  ];
-  const shown = items.filter(([, v]) => v != null && v !== 0);
-  if (shown.length === 0) return <span className="text-[#c0c0c0]">—</span>;
-  return (
-    <div className="flex flex-wrap gap-1">
-      {shown.map(([label, v]) => (
-        <span
-          key={label}
-          className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-            (v as number) > 0 ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
-          }`}
-        >
-          {label} {formatDiff(v)}
-        </span>
-      ))}
-    </div>
-  );
-}
+import {
+  BreakdownCells,
+  BreakdownHeadCells,
+  PRICE_BREAKDOWN,
+} from "@/components/PriceBreakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -91,7 +67,7 @@ export default async function PriceHistoryPage({
   );
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6">
       <Link
         href="/prices"
         className="mb-3 inline-flex items-center gap-1.5 text-sm font-medium text-[#e11d48] hover:underline"
@@ -135,16 +111,25 @@ export default async function PriceHistoryPage({
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
-                        <th className="px-4 py-2 font-medium">適用開始</th>
-                        <th className="px-2 py-2 font-medium">適用終了</th>
-                        <th className="px-2 py-2 text-right font-medium">単価</th>
-                        <th className="px-2 py-2 text-right font-medium">改訂前</th>
-                        <th className="px-2 py-2 text-right font-medium">差額</th>
-                        <th className="px-2 py-2 font-medium">単価差の要因（内訳）</th>
-                        <th className="px-2 py-2 font-medium">備考（改訂理由）</th>
-                        <th className="px-2 py-2 font-medium">添付資料</th>
-                        <th className="px-2 py-2 font-medium">出所</th>
+                      {/* 差額の右に、単価差の要因（内訳）を要因ごとの列で並べる */}
+                      <tr className="text-left text-xs text-[#707070]">
+                        <th className="px-4 py-2 font-medium" rowSpan={2}>適用開始</th>
+                        <th className="px-2 py-2 font-medium" rowSpan={2}>適用終了</th>
+                        <th className="px-2 py-2 text-right font-medium" rowSpan={2}>単価</th>
+                        <th className="px-2 py-2 text-right font-medium" rowSpan={2}>改訂前</th>
+                        <th className="px-2 py-2 text-right font-medium" rowSpan={2}>差額</th>
+                        <th
+                          className="border-x border-[#eeeeee] bg-[#fafafa] px-2 pt-2 text-center font-medium"
+                          colSpan={PRICE_BREAKDOWN.length}
+                        >
+                          単価差の要因（内訳）
+                        </th>
+                        <th className="px-2 py-2 font-medium" rowSpan={2}>備考（改訂理由）</th>
+                        <th className="px-2 py-2 font-medium" rowSpan={2}>添付資料</th>
+                        <th className="px-2 py-2 font-medium" rowSpan={2}>出所</th>
+                      </tr>
+                      <tr className="border-b border-[#eeeeee] text-xs text-[#707070]">
+                        <BreakdownHeadCells className="px-2 pb-2" />
                       </tr>
                     </thead>
                     <tbody>
@@ -177,9 +162,7 @@ export default async function PriceHistoryPage({
                             >
                               {formatDiff(diff)}
                             </td>
-                            <td className="px-2 py-2 text-xs">
-                              <BreakdownTags row={r} />
-                            </td>
+                            <BreakdownCells row={r} />
                             <td className="px-2 py-2 text-xs">{r.reason ?? "—"}</td>
                             <td className="px-2 py-2 text-xs">
                               {(() => {

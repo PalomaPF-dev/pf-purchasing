@@ -7,8 +7,9 @@ import {
   type PriceFactor,
   type PriceSort,
 } from "@/lib/db";
-import { formatDate, formatPrice } from "@/lib/format";
+import { formatDate, formatDiff, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
+import { BreakdownCells, BreakdownHeadCells } from "@/components/PriceBreakdown";
 import SearchBox from "@/components/SearchBox";
 import PriceFilters from "@/components/PriceFilters";
 import SortHeader from "@/components/SortHeader";
@@ -120,7 +121,7 @@ export default async function PricesPage({
   const sortHref = (key: string, d: "asc" | "desc") => `/prices${qs({ sort: key, dir: d })}`;
 
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6">
+    <div className="mx-auto max-w-[110rem] p-4 sm:p-6">
       <PageHeader
         title="単価履歴"
         description={`購買単価の適用履歴（${scope.restricted ? "担当取引先のみ・" : ""}全 ${total.toLocaleString()} 件）。品目CDをクリックすると改訂履歴と理由を表示します。`}
@@ -207,6 +208,10 @@ export default async function PricesPage({
                     defaultDir="desc"
                   />
                 </th>
+                <th className="px-2 py-2.5 text-right font-medium">改訂前</th>
+                <th className="px-2 py-2.5 text-right font-medium">差額</th>
+                {/* 差額の右に、単価差の要因（内訳）を要因ごとの列で並べる */}
+                <BreakdownHeadCells className="px-2 py-2.5" />
                 <th className="px-2 py-2.5 font-medium">
                   <SortHeader
                     label="適用開始"
@@ -236,7 +241,13 @@ export default async function PricesPage({
               </tr>
             </thead>
             <tbody>
-              {rows.map((p) => (
+              {rows.map((p) => {
+                // 改訂前単価が記録されている行だけ差額を出す（一覧は前後の行を持たないため）
+                const diff =
+                  p.priceBefore != null
+                    ? Math.round((p.price - p.priceBefore) * 10000) / 10000
+                    : null;
+                return (
                 <tr key={p.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
                   <td className="px-4 py-2 font-mono">
                     <Link
@@ -262,6 +273,21 @@ export default async function PricesPage({
                     )}
                   </td>
                   <td className="px-2 py-2 text-right font-mono font-semibold">{formatPrice(p.price)}</td>
+                  <td className="px-2 py-2 text-right font-mono text-xs text-[#707070]">
+                    {p.priceBefore != null ? formatPrice(p.priceBefore) : <span className="text-[#d5d5d5]">—</span>}
+                  </td>
+                  <td
+                    className={`px-2 py-2 text-right font-mono text-xs ${
+                      diff != null && diff > 0
+                        ? "font-medium text-red-600"
+                        : diff != null && diff < 0
+                          ? "font-medium text-emerald-600"
+                          : "text-[#d5d5d5]"
+                    }`}
+                  >
+                    {diff != null && diff !== 0 ? formatDiff(diff) : "—"}
+                  </td>
+                  <BreakdownCells row={p} />
                   <td className="px-2 py-2 text-xs">{formatDate(p.startDate)}</td>
                   <td className="px-2 py-2 text-xs">{formatDate(p.endDate)}</td>
                   <td className="max-w-64 px-2 py-2 text-xs" title={p.reason ?? undefined}>
@@ -279,7 +305,8 @@ export default async function PricesPage({
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
