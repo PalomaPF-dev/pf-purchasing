@@ -204,18 +204,19 @@ export default async function RequestPrintPage({
               const amtText = amt == null ? "" : amt.toLocaleString();
               return (
                 <tr key={l.id}>
-                  <td className={`${tdText} whitespace-nowrap font-mono ${cdFont(itemCdText(l))}`}>
-                    {itemCdText(l)}
+                  <td className={`${td} font-mono`}>
+                    {l.itemCd}
+                    {l.itemBranch ? `-${l.itemBranch}` : ""}
                     {multiSupplier && (
                       <div className="text-[10px] text-slate-500">取引先 {l.supplierCd}</div>
                     )}
                   </td>
-                  <td className={`${tdText} ${nameFont(l.itemName || names.get(l.itemCd) || "")}`}>
+                  <td className={`${td} text-[9px] leading-tight`}>
                     {l.itemName || names.get(l.itemCd) || ""}
                   </td>
-                  <td className={`${tdText} text-center text-[9px]`}>{l.unitCd ?? ""}</td>
+                  <td className={`${td} text-center text-[9px]`}>{l.unitCd ?? ""}</td>
                   <NumTd cls={tdNew} v={blank(l.lotQty)} />
-                  <td className={`${tdText} text-center font-mono text-[9px]`}>{l.locCd ?? ""}</td>
+                  <td className={`${td} text-center font-mono text-[9px]`}>{l.locCd ?? ""}</td>
 
                   {/* 新単価 */}
                   <td className={tdDate}>{slashDate(l.startDate)}</td>
@@ -247,7 +248,7 @@ export default async function RequestPrintPage({
                   <NumTd cls={tdQty} v={amtText} />
                   <NumTd cls={tdQty} v={impText} bold />
 
-                  <td className={`${tdText} text-[9px]`}>
+                  <td className={`${td} text-[9px] leading-tight`}>
                     {isNew ? "新規登録" : ""}
                     {l.reasonNote ? (isNew ? " / " : "") + l.reasonNote : ""}
                   </td>
@@ -264,11 +265,8 @@ export default async function RequestPrintPage({
                 <NumTd cls={tdQty} v={blank(totalQty)} />
                 <NumTd cls={tdQty} v={totalAmount == null ? "" : totalAmount.toLocaleString()} />
                 <NumTd cls={tdQty} v={totalImpact.toLocaleString()} bold />
-                <td className={`${tdText} text-[8px]`}>
-                  <div className="whitespace-nowrap">年換算</div>
-                  <div className="whitespace-nowrap font-mono">
-                    {(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}
-                  </div>
+                <td className={`${td} text-[9px]`}>
+                  年換算 {(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}
                 </td>
               </tr>
             </tfoot>
@@ -294,26 +292,23 @@ const thOld =
 const thQty =
   "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
 const tdQty =
-  "print-keep-bg whitespace-nowrap border border-slate-400 bg-amber-50/50 px-1 py-0.5 font-mono leading-tight text-right";
+  "print-keep-bg whitespace-nowrap border border-slate-400 bg-amber-50/50 px-1 py-1 font-mono text-right";
 const thBd =
   "print-keep-bg border border-slate-500 bg-amber-50 px-1 py-1 text-center text-[9px] font-bold text-amber-800";
-/** 文字サイズを行ごとに変える列（品番・品名）用の土台。text-* は付けない */
-const tdText = "border border-slate-400 px-0.5 py-0.5 leading-tight align-top";
-const td = `${tdText} px-1.5 text-[10px]`;
+const td = "border border-slate-400 px-1.5 py-1 text-[10px] align-top";
 /** 数値セルの土台（文字サイズは桁数に応じて numFont で付ける） */
-const tdNum =
-  "whitespace-nowrap border border-slate-400 px-1 py-0.5 font-mono leading-tight align-top text-right";
+const tdNum = "whitespace-nowrap border border-slate-400 px-1 py-1 font-mono align-top text-right";
 const tdNew = tdNum;
 const tdOld = `${tdNum} text-slate-600`;
 /** 内訳は6列と細いので一段小さく詰めて印字する */
 const tdBd =
-  "whitespace-nowrap border border-slate-400 px-0.5 py-0.5 font-mono leading-tight align-top tracking-tighter text-right text-amber-900";
+  "whitespace-nowrap border border-slate-400 px-0.5 py-1 font-mono align-top tracking-tighter text-right text-amber-900";
 /**
  * 日付セル。列幅内に必ず収まるよう文字を詰め、万一あふれても
  * 隣のセル（単価）に重ならないよう切り落とす。
  */
 const tdDate =
-  "whitespace-nowrap overflow-hidden border border-slate-400 px-0.5 py-0.5 text-[9px] font-mono leading-tight align-top text-center tracking-tighter";
+  "whitespace-nowrap overflow-hidden border border-slate-400 px-0.5 py-1 text-[9px] font-mono align-top text-center tracking-tighter";
 
 /**
  * 明細テーブルの列幅（19列・合計100%）。
@@ -323,10 +318,10 @@ const tdDate =
  */
 const COL_WIDTHS = [
   "7%", // 品番
-  "9%", // 品名
-  "2.3%", // 単位
-  "4%", // ロット数
-  "2.8%", // 納入場所
+  "8%", // 品名
+  "2.5%", // 単位
+  "4.2%", // ロット数
+  "3%", // 納入場所
   "5.3%", // 適用日
   "4.3%", // 支給単価
   "5%", // 新単価
@@ -334,37 +329,17 @@ const COL_WIDTHS = [
   "5.3%", // 取消日
   "4.6%", // 旧単価
   "4.6%", // 旧買入単価
-  "3.23%", // 支給材建値
-  "3.23%", // 材料建値
-  "3.23%", // 単価改定
-  "3.23%", // 設計変更
-  "3.23%", // 為替変動
-  "3.23%", // その他
+  "3.3%", // 支給材建値
+  "3.3%", // 材料建値
+  "3.3%", // 単価改定
+  "3.3%", // 設計変更
+  "3.3%", // 為替変動
+  "3.3%", // その他
   "4.8%", // 月当たり数量
   "5%", // 月額
   "5.6%", // 改訂影響額
   "6%", // 備考
 ];
-
-/** 品番（枝番は「*」なら付けない） */
-function itemCdText(l: PriceRequestLine): string {
-  return l.itemBranch && l.itemBranch !== "*" ? `${l.itemCd}-${l.itemBranch}` : l.itemCd;
-}
-
-/** 品番は1行に収める。枝番つきで長くなったぶんだけ文字を詰める */
-function cdFont(v: string): string {
-  if (v.length <= 9) return "text-[10px]";
-  if (v.length <= 11) return "text-[9px]";
-  if (v.length <= 13) return "text-[8px] tracking-tighter";
-  return "text-[7px] tracking-tighter";
-}
-
-/** 品名はできるだけ1行に収める（長いものだけ折り返す） */
-function nameFont(v: string): string {
-  if (v.length <= 16) return "text-[9px]";
-  if (v.length <= 21) return "text-[8px]";
-  return "text-[7px]";
-}
 
 /**
  * 桁数に応じた文字サイズ。折り返しも隣接セルへのはみ出しもさせず、
