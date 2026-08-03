@@ -94,7 +94,7 @@ export default function ItemPicker({
     <div ref={boxRef} className="relative">
       <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#a0a0a0]" />
       <input
-        className="w-full rounded border border-[#d5d5d5] bg-white py-1.5 pl-7 pr-2 font-mono text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
+        className="w-full rounded border border-[#d5d5d5] bg-white py-0.5 pl-7 pr-2 font-mono text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]"
         value={value}
         onChange={(e) => {
           onTextChange(e.target.value);
