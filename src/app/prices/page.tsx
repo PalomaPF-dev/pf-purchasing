@@ -181,11 +181,15 @@ export default async function PricesPage({
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[1700px] text-sm">
             <thead>
               {/* 見出しをクリックすると、その項目で並び替える */}
-              <tr className="border-b border-[#eeeeee] text-left text-xs text-[#707070]">
-                <th className="px-4 py-2.5 font-medium">
+              <tr className="whitespace-nowrap border-b border-[#eeeeee] text-left text-xs text-[#707070]">
+                {/* 横スクロールしてもどの品目かわかるよう、品目CDは左端に固定する */}
+                <th
+                  className="sticky left-0 z-20 bg-white px-4 py-2.5 font-medium shadow-[1px_0_0_0_#eeeeee]"
+                  style={{ width: 140, minWidth: 140 }}
+                >
                   <SortHeader label="品目CD" sortKey="itemCd" current={sort} dir={dir} href={sortHref} />
                 </th>
                 <th className="px-2 py-2.5 font-medium">
@@ -248,8 +252,11 @@ export default async function PricesPage({
                     ? Math.round((p.price - p.priceBefore) * 10000) / 10000
                     : null;
                 return (
-                <tr key={p.id} className="border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
-                  <td className="px-4 py-2 font-mono">
+                <tr key={p.id} className="group border-b border-[#f5f5f5] hover:bg-[#f7f7f5]">
+                  <td
+                    className="sticky left-0 z-20 bg-white px-4 py-2 font-mono shadow-[1px_0_0_0_#f5f5f5] group-hover:bg-[#f7f7f5]"
+                    style={{ width: 140, minWidth: 140 }}
+                  >
                     <Link
                       href={`/prices/${encodeURIComponent(p.itemCd)}?supplier=${encodeURIComponent(p.supplierCd)}`}
                       className="text-[#e11d48] hover:underline"
@@ -258,11 +265,11 @@ export default async function PricesPage({
                       {p.itemBranch && p.itemBranch !== "*" ? `-${p.itemBranch}` : ""}
                     </Link>
                   </td>
-                  <td className="px-2 py-2">{p.itemName || "—"}</td>
-                  <td className="px-2 py-2">
+                  <td className="max-w-56 truncate px-2 py-2" title={p.itemName || undefined}>{p.itemName || "—"}</td>
+                  <td className="max-w-48 truncate px-2 py-2" title={p.supplierName ?? undefined}>
                     <span className="font-mono">{p.supplierCd}</span> {p.supplierName ?? ""}
                   </td>
-                  <td className="px-2 py-2 text-xs">
+                  <td className="max-w-44 truncate whitespace-nowrap px-2 py-2 text-xs">
                     {p.locCd && p.locCd !== "*" ? (
                       <>
                         <span className="font-mono">{p.locCd}</span>
@@ -288,8 +295,8 @@ export default async function PricesPage({
                     {diff != null && diff !== 0 ? formatDiff(diff) : "—"}
                   </td>
                   <BreakdownCells row={p} />
-                  <td className="px-2 py-2 text-xs">{formatDate(p.startDate)}</td>
-                  <td className="px-2 py-2 text-xs">{formatDate(p.endDate)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs">{formatDate(p.startDate)}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-xs">{formatDate(p.endDate)}</td>
                   <td className="max-w-64 px-2 py-2 text-xs" title={p.reason ?? undefined}>
                     <span className="line-clamp-2">{p.reason || <span className="text-[#c0c0c0]">—</span>}</span>
                   </td>

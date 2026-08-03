@@ -462,12 +462,20 @@ export default function RequestForm({
     setTab("manual");
   }
 
-  const th = "whitespace-nowrap px-2 py-2 text-left text-[11px] font-medium text-[#707070]";
+  const th = "whitespace-nowrap px-2 py-1.5 text-left text-[11px] font-medium text-[#707070]";
   const thGroup =
-    "whitespace-nowrap px-2 py-1 text-center text-[11px] font-bold tracking-wide text-[#707070]";
-  const td = "px-2 py-1.5 align-top";
+    "whitespace-nowrap px-2 py-0.5 text-center text-[11px] font-bold tracking-wide text-[#707070]";
+  const td = "px-2 py-0.5 align-middle";
   const cell =
-    "w-full rounded border border-[#d5d5d5] bg-white px-2 py-1 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
+    "w-full rounded border border-[#d5d5d5] bg-white px-2 py-0.5 text-sm focus:border-[#e11d48] focus:outline-none focus:ring-1 focus:ring-[#e11d48]";
+  // 横スクロールしても「#」と「品目CD」は左端に固定して、どの行かわかるようにする。
+  // border-collapse では固定セルの罫線が流れてしまうため、右の区切りは box-shadow で描く
+  const NO_W = 40;
+  const CD_W = 208;
+  const stickyNo = { left: 0, width: NO_W, minWidth: NO_W, maxWidth: NO_W } as const;
+  const stickyCd = { left: NO_W, width: CD_W, minWidth: CD_W, maxWidth: CD_W } as const;
+  const stickyCls = "sticky z-20";
+  const stickyEdge = "shadow-[1px_0_0_0_#e5e5e5]";
 
   const TABS: { key: Tab; label: string; icon: typeof Keyboard }[] = [
     { key: "manual", label: "手入力", icon: Keyboard },
@@ -547,8 +555,16 @@ export default function RequestForm({
               <thead>
                 {/* 品目の属性（枝番・単位・ロット数）→ 新単価 → 旧単価 → 単価差 → 内訳 → 月当たり */}
                 <tr className="border-b border-[#f0f0f0] bg-[#fafafa] text-center">
-                  <th className={`${th} w-10`} rowSpan={2}>#</th>
-                  <th className={`${th} w-52`} rowSpan={2}>品目CD *</th>
+                  <th className={`${th} ${stickyCls} bg-[#fafafa]`} style={stickyNo} rowSpan={2}>
+                    #
+                  </th>
+                  <th
+                    className={`${th} ${stickyCls} ${stickyEdge} bg-[#fafafa]`}
+                    style={stickyCd}
+                    rowSpan={2}
+                  >
+                    品目CD *
+                  </th>
                   <th className={`${th} w-16`} rowSpan={2}>枝番</th>
                   <th className={`${th} w-44`} rowSpan={2}>品名</th>
                   <th className={`${th} w-16`} rowSpan={2}>単位</th>
@@ -601,8 +617,13 @@ export default function RequestForm({
                   return (
                     <Fragment key={i}>
                       <tr className="border-b border-[#f5f5f5] align-top">
-                        <td className={`${td} pt-3 text-xs text-[#707070]`}>{i + 1}</td>
-                        <td className={td}>
+                        <td
+                          className={`${td} ${stickyCls} bg-white text-xs text-[#707070]`}
+                          style={stickyNo}
+                        >
+                          {i + 1}
+                        </td>
+                        <td className={`${td} ${stickyCls} ${stickyEdge} bg-white`} style={stickyCd}>
                           <ItemPicker
                             supplierCd={supplier?.code ?? ""}
                             value={l.itemCd}
@@ -700,14 +721,14 @@ export default function RequestForm({
                               <Search className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <div className="mt-0.5 text-[10px] text-[#a0a0a0]">
+                          <div className="text-[10px] leading-tight text-[#a0a0a0]">
                             {isNew ? "新規登録品" : `取消日 ${dayBeforeStr(l.startDate)}`}
                           </div>
                         </td>
                         {/* 単価差 */}
                         <td className={`${td} border-l border-[#f0f0f0]`}>
                           <div
-                            className={`rounded px-2 py-1 text-right font-mono text-sm font-bold ${
+                            className={`rounded px-2 py-0.5 text-right font-mono text-sm font-bold ${
                               d == null
                                 ? "bg-[#fafafa] text-[#a0a0a0]"
                                 : d > 0
@@ -720,7 +741,7 @@ export default function RequestForm({
                             {d == null ? "—" : d > 0 ? `+${d}` : String(d)}
                           </div>
                           {mismatch && (
-                            <div className="mt-0.5 text-[10px] font-medium text-red-600">
+                            <div className="text-[10px] font-medium leading-tight text-red-600">
                               内訳計 {s}
                             </div>
                           )}
@@ -797,18 +818,21 @@ export default function RequestForm({
               {/* 合計（単価改訂の影響額） */}
               <tfoot>
                 <tr className="border-t-2 border-[#e5e5e5] bg-[#fafafa] text-sm font-bold">
-                  {/* #〜内訳（19列）までをまとめて見出しにする */}
-                  <td className="px-2 py-2 text-right text-xs text-[#707070]" colSpan={19}>
+                  {/* 左端の固定列（#・品目CD）は合計行でも固定しておく */}
+                  <td className={`${stickyCls} bg-[#fafafa]`} style={stickyNo} />
+                  <td className={`${stickyCls} ${stickyEdge} bg-[#fafafa]`} style={stickyCd} />
+                  {/* 枝番〜内訳（17列）までをまとめて見出しにする */}
+                  <td className="px-2 py-1.5 text-right text-xs text-[#707070]" colSpan={17}>
                     合計（月当たり）
                   </td>
-                  <td className="px-2 py-2 text-right font-mono text-xs text-[#707070]">
+                  <td className="px-2 py-1.5 text-right font-mono text-xs text-[#707070]">
                     {totalQty == null ? "—" : totalQty.toLocaleString()}
                   </td>
-                  <td className="px-2 py-2 text-right font-mono">
+                  <td className="px-2 py-1.5 text-right font-mono">
                     {totalAmount == null ? "—" : totalAmount.toLocaleString()}
                   </td>
                   <td
-                    className={`px-2 py-2 text-right font-mono ${
+                    className={`px-2 py-1.5 text-right font-mono ${
                       totalImpact == null
                         ? "text-[#a0a0a0]"
                         : totalImpact > 0
@@ -823,7 +847,7 @@ export default function RequestForm({
                       : `${totalImpact > 0 ? "+" : ""}${totalImpact.toLocaleString()}`}
                   </td>
                   {/* 備考＋操作 */}
-                  <td className="px-2 py-2 text-xs font-normal text-[#a0a0a0]" colSpan={2}>
+                  <td className="px-2 py-1.5 text-xs font-normal text-[#a0a0a0]" colSpan={2}>
                     年換算 {totalImpact == null ? "—" : `${(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}`}
                   </td>
                 </tr>
