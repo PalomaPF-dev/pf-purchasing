@@ -7,6 +7,7 @@ import { formatDateTime } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ReqNoSettings from "@/components/ReqNoSettings";
 import DeleteDraftButton from "@/components/DeleteDraftButton";
+import SearchBox from "@/components/SearchBox";
 
 export const dynamic = "force-dynamic";
 
@@ -97,16 +98,14 @@ export default async function RequestsPage({
         >
           自分の申請
         </Link>
-        <form className="ml-auto" action="/requests" method="GET">
-          {status && <input type="hidden" name="status" value={status} />}
-          {mine && <input type="hidden" name="mine" value="1" />}
-          <input
-            name="q"
-            defaultValue={q}
-            placeholder="品目CD・品名・取引先で検索"
-            className="w-64 rounded-lg border border-[#d5d5d5] bg-white px-3 py-1.5 text-sm focus:border-[#e11d48] focus:outline-none"
-          />
-        </form>
+        <SearchBox
+          action="/requests"
+          q={q}
+          placeholder="品目CD・品名・取引先で検索"
+          hidden={{ status: status || undefined, mine: mine ? "1" : undefined }}
+          scope="prices"
+          className="ml-auto"
+        />
       </div>
 
       {requests.length === 0 ? (

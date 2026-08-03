@@ -5,8 +5,10 @@ import {
   currentPriceFor,
   searchActiveSuppliers,
   searchItems,
+  searchSuggestions,
   searchSupplierItems,
   searchSuppliers,
+  type SuggestScope,
 } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -32,6 +34,22 @@ export async function GET(req: NextRequest) {
       if (!q) return NextResponse.json({ items: [] });
       const items = await searchItems(session.companyId, q);
       return NextResponse.json({ items });
+    }
+    // 一覧画面の検索候補（画面ごとに探す対象が違う）
+    if (type === "suggest") {
+      const q = (sp.get("q") ?? "").trim();
+      const scope = (sp.get("scope") ?? "prices") as SuggestScope;
+      if (!q) return NextResponse.json({ suggestions: [] });
+      // マスタ管理の画面は管理者専用なので、その候補も管理者だけに返す
+      const adminOnly: SuggestScope[] = ["items", "locations", "employees"];
+      if (adminOnly.includes(scope) && session.role !== "admin") {
+        return NextResponse.json({ suggestions: [] });
+      }
+      const scopeOf = supplierScopeOf(session);
+      const suggestions = await searchSuggestions(session.companyId, scope, q, {
+        buyerLoginId: scopeOf.buyerLoginId,
+      });
+      return NextResponse.json({ suggestions });
     }
     if (type === "suppliers") {
       const q = (sp.get("q") ?? "").trim();

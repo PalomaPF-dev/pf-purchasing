@@ -75,7 +75,7 @@ export default async function LocationsPage({
         </div>
       </form>
 
-      <SearchBox action="/locations" q={q} total={total} placeholder="納入場所CD・名称で検索" />
+      <SearchBox action="/locations" q={q} total={total} placeholder="納入場所CD・名称で検索" scope="locations" />
 
       {rows.length === 0 ? (
         <div className="rounded-xl border border-[#e5e5e5] bg-white p-8 text-center text-sm text-[#707070]">

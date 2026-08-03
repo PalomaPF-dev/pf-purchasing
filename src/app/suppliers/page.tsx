@@ -82,7 +82,7 @@ export default async function SuppliersPage({
         </form>
       )}
 
-      <SearchBox action="/suppliers" q={q} placeholder="取引先CD・取引先名で検索" total={total} />
+      <SearchBox action="/suppliers" q={q} placeholder="取引先CD・取引先名で検索" total={total} scope="suppliers" />
 
       <div className="overflow-x-auto rounded-xl border border-[#e5e5e5] bg-white">
         <table className="w-full text-sm">
