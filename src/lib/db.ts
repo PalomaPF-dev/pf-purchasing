@@ -1150,11 +1150,15 @@ export async function listPrices(
     dir?: SortDir | null;
     limit?: number;
     offset?: number;
+    /** 1回に取れる上限。画面は既定の500、書き出しだけ大きく取る */
+    maxLimit?: number;
+    /** 総件数を数えない（書き出しの2ページ目以降は不要なので省く） */
+    withCount?: boolean;
   } = {}
 ): Promise<{ rows: PriceHistoryRow[]; total: number }> {
   await ensureSchema();
   const sql = getSql();
-  const limit = Math.min(opts.limit ?? 100, 500);
+  const limit = Math.min(opts.limit ?? 100, Math.min(opts.maxLimit ?? 500, 5000));
   const offset = Math.max(opts.offset ?? 0, 0);
   const like = (v: string | null | undefined) => (v && v.trim() ? `%${v.trim()}%` : null);
   const q = like(opts.q);
@@ -1275,7 +1279,9 @@ export async function listPrices(
       SELECT h.*, ${historyMasterCols()}
       FROM page h ${historyMasterJoins()}
       ${orderBy}`,
-    sql`SELECT COUNT(*)::int AS n FROM price_history h WHERE ${where}`,
+    opts.withCount === false
+      ? Promise.resolve([{ n: 0 }])
+      : sql`SELECT COUNT(*)::int AS n FROM price_history h WHERE ${where}`,
   ]);
   return { rows: (rows as any[]).map(mapHistory), total: Number((cnt as any)[0]?.n ?? 0) };
 }

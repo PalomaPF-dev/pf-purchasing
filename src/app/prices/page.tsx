@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Download } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
 import {
   listPrices,
@@ -151,6 +152,15 @@ export default async function PricesPage({
           scope="prices"
           className=""
         />
+        {/* いま表示している条件のまま全件をCSVに書き出す（Excelでそのまま開ける） */}
+        <a
+          href={`/api/export/prices${qs({ page: "" })}`}
+          className="inline-flex items-center gap-1.5 rounded-full border border-[#e5e5e5] bg-white px-3 py-1.5 text-xs font-medium text-[#555555] hover:bg-[#f7f7f5]"
+          title={`この条件の ${total.toLocaleString()} 件をCSVで書き出します`}
+        >
+          <Download className="h-3.5 w-3.5" />
+          CSV出力
+        </a>
         <Link
           href={`/prices${qs({ active: activeOnly ? "" : "1" })}`}
           className={`rounded-full px-3 py-1.5 text-xs font-medium ${
