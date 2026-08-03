@@ -1047,6 +1047,48 @@ export function canApproveStage(
   return loginId != null && list.includes(loginId);
 }
 
+/**
+ * その人が「いま自分で承認できる」申請（段階ごと）。
+ * 承認画面の一覧と、ポータルの「承認待ち」バッジで同じ判定を使うための共通処理。
+ * 自分より前の段階で止まっている申請（他の人の承認待ち）は含めない。
+ */
+export async function approvalQueueFor(
+  companyId: string,
+  loginId: string | null
+): Promise<{
+  buyer: PriceRequest[];
+  mgr: PriceRequest[];
+  dept: PriceRequest[];
+  /** 他の承認担当者が担当するため、この人には出さない件数 */
+  hidden: number;
+}> {
+  const [wf, pendingAll, buyerApprovedAll, mgrApprovedAll, assigned] = await Promise.all([
+    getWfSettings(companyId),
+    listRequests(companyId, { status: "pending", limit: 500 }),
+    listRequests(companyId, { status: "buyer_approved", limit: 500 }),
+    listRequests(companyId, { status: "mgr_approved", limit: 500 }),
+    assignedApproverMap(companyId),
+  ]);
+  const at = (r: PriceRequest) => assigned.get(r.applicantLoginId ?? "") ?? NO_ASSIGNED;
+  const mine = (r: PriceRequest, stage: ApprovalStage) =>
+    canApproveRequest(wf, stage, loginId, at(r));
+  // pending は「バイヤー確認待ち」か「MGR承認待ち」か（申請者の割当で決まる）
+  const buyerPending = pendingAll.filter((r) => at(r).buyer);
+  const mgrPending = [...pendingAll.filter((r) => !at(r).buyer), ...buyerApprovedAll];
+  const buyer = buyerPending.filter((r) => mine(r, "buyer"));
+  const mgr = mgrPending.filter((r) => mine(r, "mgr"));
+  const dept = mgrApprovedAll.filter((r) => mine(r, "dept"));
+  return {
+    buyer,
+    mgr,
+    dept,
+    hidden:
+      buyerPending.length - buyer.length +
+      (mgrPending.length - mgr.length) +
+      (mgrApprovedAll.length - dept.length),
+  };
+}
+
 // ===== 単価履歴 =====
 
 /** 単価履歴一覧の並び替えキー */
