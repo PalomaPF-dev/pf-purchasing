@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { requireSession, requireAdminSession, supplierScopeOf } from "./session";
 import {
   addRequestMessage,
-  approvalQueueFor,
   approveRequest,
   cancelApproval,
   getRequest,
@@ -341,85 +340,6 @@ export async function rejectManyAction(
   }
   revalidatePath("/approvals");
   revalidatePath("/requests");
-  return { ok, failed };
-}
-
-/**
- * 選んだ申請をまとめて承認（管理者のみ）。
- * どの段階で承認するかはサーバ側で申請ごとに判定するので、
- * MGR承認待ちと部門長承認待ちが混ざっていてもそのまま処理できる。
- * 自分がいま承認できない申請は、理由をつけて飛ばす。
- */
-export async function approveSelectedAction(
-  requestIds: string[],
-  comment: string
-): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
-  const s = await requireAdminSession();
-  const queue = await approvalQueueFor(s.companyId, s.loginId);
-  const stageOf = new Map<string, ApprovalStage>();
-  for (const r of queue.buyer) stageOf.set(r.id, "buyer");
-  for (const r of queue.mgr) stageOf.set(r.id, "mgr");
-  for (const r of queue.dept) stageOf.set(r.id, "dept");
-
-  const failed: { id: string; message: string }[] = [];
-  let ok = 0;
-  for (const id of requestIds) {
-    const stage = stageOf.get(id);
-    if (!stage) {
-      failed.push({ id, message: "いまあなたが承認できる段階ではありません" });
-      continue;
-    }
-    try {
-      await approveRequest(
-        s.companyId,
-        id,
-        stage,
-        { loginId: s.loginId, name: s.userName },
-        comment.trim() || null
-      );
-      ok++;
-    } catch (e) {
-      failed.push({ id, message: e instanceof Error ? e.message : "承認に失敗しました" });
-    }
-  }
-  revalidatePath("/approvals");
-  revalidatePath("/requests");
-  revalidatePath("/prices");
-  revalidatePath("/");
-  return { ok, failed };
-}
-
-/** 選んだ申請をまとめて差し戻し（管理者のみ）。理由は必須。段階はサーバ側で判定する。 */
-export async function rejectSelectedAction(
-  requestIds: string[],
-  comment: string
-): Promise<{ ok: number; failed: { id: string; message: string }[] }> {
-  const s = await requireAdminSession();
-  if (!comment.trim()) throw new Error("差し戻しの理由を入力してください。");
-  const queue = await approvalQueueFor(s.companyId, s.loginId);
-  const stageOf = new Map<string, ApprovalStage>();
-  for (const r of queue.buyer) stageOf.set(r.id, "buyer");
-  for (const r of queue.mgr) stageOf.set(r.id, "mgr");
-  for (const r of queue.dept) stageOf.set(r.id, "dept");
-
-  const failed: { id: string; message: string }[] = [];
-  let ok = 0;
-  for (const id of requestIds) {
-    const stage = stageOf.get(id);
-    if (!stage) {
-      failed.push({ id, message: "いまあなたが差し戻せる段階ではありません" });
-      continue;
-    }
-    try {
-      await rejectRequest(s.companyId, id, stage, { loginId: s.loginId, name: s.userName }, comment.trim());
-      ok++;
-    } catch (e) {
-      failed.push({ id, message: e instanceof Error ? e.message : "差し戻しに失敗しました" });
-    }
-  }
-  revalidatePath("/approvals");
-  revalidatePath("/requests");
-  revalidatePath("/");
   return { ok, failed };
 }
 
