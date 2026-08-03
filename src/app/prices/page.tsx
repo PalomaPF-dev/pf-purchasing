@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { listPrices, PRICE_SORT_DEFAULT, type PriceSort } from "@/lib/db";
+import {
+  listPrices,
+  PRICE_FACTORS,
+  PRICE_SORT_DEFAULT,
+  type PriceFactor,
+  type PriceSort,
+} from "@/lib/db";
 import { formatDate, formatPrice } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import SearchBox from "@/components/SearchBox";
@@ -38,6 +44,10 @@ export default async function PricesPage({
     active?: string;
     sort?: string;
     dir?: string;
+    from?: string;
+    to?: string;
+    period?: string;
+    factor?: string;
   }>;
 }) {
   const session = await requireSession();
@@ -51,6 +61,18 @@ export default async function PricesPage({
     reasonQ: sp.reasonQ ?? "",
   };
   const activeOnly = sp.active === "1";
+  // 適用期間と単価差の要因での抽出（不正な値は無視する）
+  const ymd = (v: string | undefined) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
+  const period = {
+    from: ymd(sp.from),
+    to: ymd(sp.to),
+    mode: sp.period === "overlap" ? "overlap" : "start",
+    factor: (PRICE_FACTORS as readonly (readonly [string, string, string])[]).some(
+      ([k]) => k === sp.factor
+    )
+      ? (sp.factor as string)
+      : "",
+  };
   const page = Math.max(1, Number(sp.page ?? "1") || 1);
   // 並び替え（不正な値は既定に落とす）
   const sort = (SORT_KEYS as string[]).includes(sp.sort ?? "")
@@ -64,6 +86,10 @@ export default async function PricesPage({
     ...filters,
     buyerLoginId: scope.buyerLoginId,
     activeOnly,
+    from: period.from || null,
+    to: period.to || null,
+    period: period.mode as "start" | "overlap",
+    factor: (period.factor || null) as PriceFactor | null,
     sort,
     dir,
     limit: PAGE_SIZE,
@@ -77,6 +103,10 @@ export default async function PricesPage({
       q,
       ...filters,
       active: activeOnly ? "1" : "",
+      from: period.from,
+      to: period.to,
+      period: period.mode === "overlap" ? "overlap" : "",
+      factor: period.factor,
       sort: sort === PRICE_SORT_DEFAULT && dir === "desc" ? "" : sort,
       dir: sort === PRICE_SORT_DEFAULT && dir === "desc" ? "" : dir,
       page: "",
@@ -110,6 +140,10 @@ export default async function PricesPage({
             supplierQ: filters.supplierQ || undefined,
             locQ: filters.locQ || undefined,
             reasonQ: filters.reasonQ || undefined,
+            from: period.from || undefined,
+            to: period.to || undefined,
+            period: period.mode === "overlap" ? "overlap" : undefined,
+            factor: period.factor || undefined,
             sort: sort === PRICE_SORT_DEFAULT && dir === "desc" ? undefined : sort,
             dir: sort === PRICE_SORT_DEFAULT && dir === "desc" ? undefined : dir,
           }}
@@ -130,6 +164,7 @@ export default async function PricesPage({
 
       <PriceFilters
         values={filters}
+        period={period}
         q={q}
         activeOnly={activeOnly}
         sort={sort === PRICE_SORT_DEFAULT && dir === "desc" ? "" : sort}
