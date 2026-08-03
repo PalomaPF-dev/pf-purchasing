@@ -9,6 +9,12 @@ import type { PriceRequestLine } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
+/** 月当たり金額（新単価 × 月当たり数量）。数量が無ければ null */
+function monthlyAmount(l: PriceRequestLine): number | null {
+  if (l.monthlyQty == null) return null;
+  return Math.round(l.monthlyQty * l.newPrice * 100) / 100;
+}
+
 /** 単価改訂の月当たり影響額（単価差 × 月当たり数量）。数量・旧単価が無ければ null */
 function impact(l: PriceRequestLine): number | null {
   if (l.monthlyQty == null || l.currentPrice == null) return null;
@@ -53,6 +59,7 @@ export default async function RequestPrintPage({
   // 申請時に品名が入っていない明細は、品番マスタから補って印字する
   const names = await itemNameMap(session.companyId, lines.map((l) => l.itemCd));
   const totalQty = sumOf(lines, (l) => l.monthlyQty);
+  const totalAmount = sumOf(lines, monthlyAmount);
   const totalImpact = sumOf(lines, impact);
 
   return (
@@ -156,13 +163,15 @@ export default async function RequestPrintPage({
           <thead>
             <tr>
               <th className={th} rowSpan={2}>品番</th>
-              <th className={th} rowSpan={2}>納入場所</th>
               <th className={th} rowSpan={2}>品名</th>
+              <th className={th} rowSpan={2}>単位</th>
+              <th className={th} rowSpan={2}>ロット数</th>
+              <th className={th} rowSpan={2}>納入場所</th>
               <th className={thNew} colSpan={4}>新 単 価</th>
               <th className={thOld} colSpan={3}>旧 単 価</th>
               <th className={thBd} colSpan={6}>単 価 差 の 内 訳</th>
-              <th className={thQty} colSpan={2}>月 当 た り</th>
-              <th className={th} rowSpan={2}>備考（改訂理由）</th>
+              <th className={thQty} colSpan={3}>月 当 た り</th>
+              <th className={th} rowSpan={2}>備考</th>
             </tr>
             <tr>
               <th className={thNew}>適用日</th>
@@ -179,6 +188,7 @@ export default async function RequestPrintPage({
               <th className={thBd}>為替変動</th>
               <th className={thBd}>その他</th>
               <th className={thQty}>数量</th>
+              <th className={thQty}>月額</th>
               <th className={thQty}>改訂影響額</th>
             </tr>
           </thead>
@@ -190,6 +200,8 @@ export default async function RequestPrintPage({
               const imp = impact(l);
               const impText = imp == null ? "" : imp.toLocaleString();
               const qtyText = blank(l.monthlyQty);
+              const amt = monthlyAmount(l);
+              const amtText = amt == null ? "" : amt.toLocaleString();
               return (
                 <tr key={l.id}>
                   <td className={`${td} font-mono`}>
@@ -199,12 +211,12 @@ export default async function RequestPrintPage({
                       <div className="text-[10px] text-slate-500">取引先 {l.supplierCd}</div>
                     )}
                   </td>
-                  <td className={`${td} text-center font-mono text-[9px]`}>
-                    {l.locCd ?? l.dlvCd ?? ""}
-                  </td>
                   <td className={`${td} text-[9px] leading-tight`}>
                     {l.itemName || names.get(l.itemCd) || ""}
                   </td>
+                  <td className={`${td} text-center text-[9px]`}>{l.unitCd ?? ""}</td>
+                  <NumTd cls={tdNew} v={blank(l.lotQty)} />
+                  <td className={`${td} text-center font-mono text-[9px]`}>{l.locCd ?? ""}</td>
 
                   {/* 新単価 */}
                   <td className={tdDate}>{slashDate(l.startDate)}</td>
@@ -231,8 +243,9 @@ export default async function RequestPrintPage({
                     }
                   )}
 
-                  {/* 月当たり数量と単価改訂の影響額 */}
+                  {/* 月当たり（数量・月額・改訂影響額） */}
                   <NumTd cls={tdQty} v={qtyText} />
+                  <NumTd cls={tdQty} v={amtText} />
                   <NumTd cls={tdQty} v={impText} bold />
 
                   <td className={`${td} text-[9px] leading-tight`}>
@@ -246,10 +259,11 @@ export default async function RequestPrintPage({
           {totalImpact != null && (
             <tfoot>
               <tr>
-                <td className={`${td} text-right font-bold`} colSpan={16}>
+                <td className={`${td} text-right font-bold`} colSpan={18}>
                   月当たり合計
                 </td>
                 <NumTd cls={tdQty} v={blank(totalQty)} />
+                <NumTd cls={tdQty} v={totalAmount == null ? "" : totalAmount.toLocaleString()} />
                 <NumTd cls={tdQty} v={totalImpact.toLocaleString()} bold />
                 <td className={`${td} text-[9px]`}>
                   年換算 {(Math.round(totalImpact * 12 * 100) / 100).toLocaleString()}
@@ -303,25 +317,28 @@ const tdDate =
  * 日付列は `26/08/01`（9px等幅＋詰め）が切れずに収まる幅を確保している。
  */
 const COL_WIDTHS = [
-  "7.5%", // 品番
-  "2.5%", // 納入場所
-  "10%", // 品名
-  "5.5%", // 適用日
-  "5%", // 支給単価
-  "5.5%", // 新単価
-  "5.5%", // 新買入単価
-  "5.5%", // 取消日
-  "5%", // 旧単価
-  "5%", // 旧買入単価
-  "3.4%", // 支給材建値
-  "3.4%", // 材料建値
-  "3.4%", // 単価改定
-  "3.4%", // 設計変更
-  "3.4%", // 為替変動
-  "3.4%", // その他
-  "5%", // 月当たり数量
-  "5.5%", // 改訂影響額
-  "12.1%", // 備考
+  "7%", // 品番
+  "8%", // 品名
+  "2.5%", // 単位
+  "4.2%", // ロット数
+  "3%", // 納入場所
+  "5.3%", // 適用日
+  "4.3%", // 支給単価
+  "5%", // 新単価
+  "5%", // 新買入単価
+  "5.3%", // 取消日
+  "4.6%", // 旧単価
+  "4.6%", // 旧買入単価
+  "3.3%", // 支給材建値
+  "3.3%", // 材料建値
+  "3.3%", // 単価改定
+  "3.3%", // 設計変更
+  "3.3%", // 為替変動
+  "3.3%", // その他
+  "4.8%", // 月当たり数量
+  "5%", // 月額
+  "5.6%", // 改訂影響額
+  "6%", // 備考
 ];
 
 /**
@@ -329,16 +346,17 @@ const COL_WIDTHS = [
  * 桁の多い単価だけを小さく印字して列幅に収める。
  */
 function numFont(v: string): string {
-  if (v.length <= 7) return "text-[10px]";
-  if (v.length <= 8) return "text-[9px]";
-  if (v.length <= 9) return "text-[8px]";
-  return "text-[7px] tracking-tighter";
+  if (v.length <= 6) return "text-[10px]";
+  if (v.length <= 7) return "text-[9px]";
+  if (v.length <= 8) return "text-[8px]";
+  if (v.length <= 10) return "text-[7px] tracking-tighter";
+  return "text-[6px] tracking-tighter";
 }
 
 /** 内訳（細い6列）用。土台が1段小さい */
 function bdFont(v: string): string {
-  if (v.length <= 6) return "text-[8px]";
-  if (v.length <= 8) return "text-[7px]";
+  if (v.length <= 5) return "text-[8px]";
+  if (v.length <= 7) return "text-[7px]";
   return "text-[6px]";
 }
 

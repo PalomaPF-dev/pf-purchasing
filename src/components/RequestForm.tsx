@@ -305,7 +305,7 @@ export default function RequestForm({
   async function fetchCurrent(i: number) {
     const l = lines[i];
     if (!supplier) {
-      setError("先に取引先を選択してください。");
+      setError("旧単価の自動取得には取引先の選択が必要です。上の「取引先」から選んでください。");
       return;
     }
     if (!l.itemCd) {
@@ -316,7 +316,7 @@ export default function RequestForm({
     const qs = new URLSearchParams({
       type: "current",
       item: l.itemCd,
-      supplier: supplier.code,
+      supplier: supplier?.code ?? "",
     });
     if (l.itemBranch) qs.set("branch", l.itemBranch);
     if (l.locCd) qs.set("loc", l.locCd);
@@ -504,17 +504,18 @@ export default function RequestForm({
         </p>
       </div>
 
-      {!supplier ? (
-        <div className="rounded-xl border border-dashed border-[#d5d5d5] bg-white p-8 text-center text-sm text-[#707070]">
-          先に取引先を選択してください。選択すると、その取引先の取引品目から明細を入力できます。
-        </div>
-      ) : (
-        <>
-          <div className="flex items-center gap-2">
+      {/* ①取引先の選択と②明細の入力は同時に進められる（取引先は提出前に決まっていればよい） */}
+      <>
+          <div className="flex flex-wrap items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#e11d48] text-xs font-bold text-white">
               2
             </span>
             <h2 className="text-sm font-bold text-[#333333]">品目と単価を入力してください</h2>
+            {!supplier && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800">
+                取引先を選ぶと、品目CDの候補・旧単価の自動取得が使えます（保存前に選択してください）
+              </span>
+            )}
           </div>
 
           {/* 入力方法のタブ */}
@@ -603,7 +604,7 @@ export default function RequestForm({
                         <td className={`${td} pt-3 text-xs text-[#707070]`}>{i + 1}</td>
                         <td className={td}>
                           <ItemPicker
-                            supplierCd={supplier.code}
+                            supplierCd={supplier?.code ?? ""}
                             value={l.itemCd}
                             onTextChange={(code) => update(i, { itemCd: code })}
                             onPick={(it) => pickItem(i, it)}
@@ -838,8 +839,7 @@ export default function RequestForm({
             <Plus className="h-4 w-4" />
             明細を追加
           </button>
-        </>
-      )}
+      </>
 
       {/* 添付資料（見積書・仕様書など）。保存時にまとめてアップロードする */}
       <section className="rounded-xl border border-[#e5e5e5] bg-white p-4">
