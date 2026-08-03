@@ -10,7 +10,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { requireSession, supplierScopeOf } from "@/lib/session";
-import { dashboardStats, getWfSettings, listRequests } from "@/lib/db";
+import { approvalQueueFor, dashboardStats, getWfSettings, listRequests } from "@/lib/db";
 import { hasDatabase } from "@/lib/neon";
 import { REQUEST_STATUS_LABEL } from "@/lib/types";
 import { formatDateTime } from "@/lib/format";
@@ -46,17 +46,29 @@ export default async function DashboardPage({
 
   // 一般（バイヤー）は自分の担当取引先の範囲だけを表示する
   const scope = supplierScopeOf(session);
-  const [stats, wf, myRequests, awaiting] = await Promise.all([
+  const [stats, wf, myRequests, queue] = await Promise.all([
     dashboardStats(companyId),
     getWfSettings(companyId),
     listRequests(companyId, { applicantLoginId: loginId, buyerLoginId: scope.buyerLoginId, limit: 5 }),
-    isAdmin ? listRequests(companyId, { status: "awaiting", limit: 5 }) : Promise.resolve([]),
+    // 承認待ちは「いま自分で承認できる分」だけ。自分より前の段階で止まっている
+    // 申請（他の人の承認待ち）は数えないし、一覧にも出さない
+    isAdmin
+      ? approvalQueueFor(companyId, loginId)
+      : Promise.resolve({ buyer: [], mgr: [], dept: [], hidden: 0 }),
   ]);
+  // 承認待ちの一覧（段階順に、自分が承認できるものだけ）
+  const awaiting = [...queue.buyer, ...queue.mgr, ...queue.dept].slice(0, 5);
 
   const cards = [
-    { label: `${wf.mgrLabel}承認待ち`, value: stats.pendingCount, href: "/approvals", accent: "text-amber-600" },
-    ...(wf.stages === 2
-      ? [{ label: `${wf.deptLabel}承認待ち`, value: stats.mgrApprovedCount, href: "/approvals", accent: "text-amber-600" }]
+    // 承認の段階は、その人が承認できる段階だけを出す（管理者以外は出さない）
+    ...(isAdmin && queue.buyer.length > 0
+      ? [{ label: `${wf.buyerLabel}確認待ち`, value: queue.buyer.length, href: "/approvals", accent: "text-amber-600" }]
+      : []),
+    ...(isAdmin
+      ? [{ label: `${wf.mgrLabel}承認待ち`, value: queue.mgr.length, href: "/approvals", accent: "text-amber-600" }]
+      : []),
+    ...(isAdmin && wf.stages === 2
+      ? [{ label: `${wf.deptLabel}承認待ち`, value: queue.dept.length, href: "/approvals", accent: "text-amber-600" }]
       : []),
     { label: "今月の承認済", value: stats.approvedThisMonth, href: "/requests?status=approved", accent: "text-emerald-600" },
     { label: "MC未出力明細", value: stats.unexportedCount, href: "/export", accent: "text-rose-600" },
@@ -111,14 +123,17 @@ export default async function DashboardPage({
             <div className="flex items-center justify-between border-b border-[#eeeeee] px-4 py-3">
               <h2 className="flex items-center gap-2 text-sm font-bold text-[#333333]">
                 <Stamp className="h-4 w-4 text-[#e11d48]" />
-                承認待ちの申請
+                自分が承認する申請
               </h2>
               <Link href="/approvals" className="flex items-center gap-1 text-xs text-[#e11d48] hover:underline">
                 すべて見る <ArrowRight className="h-3 w-3" />
               </Link>
             </div>
             {awaiting.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-[#707070]">承認待ちの申請はありません。</p>
+              <p className="px-4 py-6 text-sm text-[#707070]">
+                いま承認できる申請はありません。
+                {queue.hidden > 0 ? `（他の段階・他の承認担当者の ${queue.hidden} 件は含みません）` : ""}
+              </p>
             ) : (
               <ul className="divide-y divide-[#f0f0f0]">
                 {awaiting.map((r) => (
