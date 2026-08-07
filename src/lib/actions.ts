@@ -32,6 +32,7 @@ import {
   renumberRequests,
 } from "./db";
 import { deletePrivateBlob } from "./privateBlob";
+import { notifyApprovalRequested } from "./approvalNotify";
 import type { ApprovalStage, LineInput } from "./types";
 
 /**
@@ -87,6 +88,8 @@ export async function createRequestAction(payload: {
   );
   if (payload.submit) {
     await submitRequest(s.companyId, id, { loginId: s.loginId, name: s.userName });
+    // 承認者へLINE WORKS通知（宛先の判定はポータル側。失敗しても申請は成立させる）
+    notifyApprovalRequested(s.loginId, id);
   }
   revalidatePath("/requests");
   return { id };
@@ -107,6 +110,7 @@ export async function updateRequestAction(payload: {
   });
   if (payload.submit) {
     await submitRequest(s.companyId, payload.requestId, { loginId: s.loginId, name: s.userName });
+    notifyApprovalRequested(s.loginId, payload.requestId);
   }
   revalidatePath("/requests");
   revalidatePath(`/requests/${payload.requestId}`);
@@ -116,6 +120,7 @@ export async function submitRequestAction(requestId: string): Promise<ActionResu
   return run(async () => {
     const s = await requireSession();
     await submitRequest(s.companyId, requestId, { loginId: s.loginId, name: s.userName });
+    notifyApprovalRequested(s.loginId, requestId);
     revalidatePath("/requests");
     revalidatePath(`/requests/${requestId}`);
     revalidatePath("/approvals");
