@@ -115,7 +115,9 @@ export async function POST(req: Request) {
 export async function DELETE(req: Request) {
   const session = await getSessionWithRole();
   if (!session?.companyId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const id = new URL(req.url).searchParams.get("id") ?? "";
+  const url = new URL(req.url);
+  const id = url.searchParams.get("id") ?? "";
+  const reason = url.searchParams.get("reason")?.trim() || null;
   if (!id) return NextResponse.json({ error: "id is required" }, { status: 400 });
 
   const requestId = await requestIdOfFile(session.companyId, id);
@@ -133,8 +135,12 @@ export async function DELETE(req: Request) {
       { status: 409 }
     );
   }
-  const { blobUrl } = await deleteRequestFile(session.companyId, id);
-  // DB から消えた後に実体を消す。失敗しても業務は止めない（privateBlob 側でログのみ）
-  await deletePrivateBlob(blobUrl);
+  // 電帳法対応: 物理削除はしない。行と実体を残したまま論理削除し、履歴を記録する
+  await deleteRequestFile(
+    session.companyId,
+    id,
+    { loginId: session.loginId, name: session.userName },
+    reason
+  );
   return NextResponse.json({ ok: true, files: await listRequestFiles(session.companyId, requestId) });
 }

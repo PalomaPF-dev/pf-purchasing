@@ -31,7 +31,6 @@ import {
   deleteLocation,
   renumberRequests,
 } from "./db";
-import { deletePrivateBlob } from "./privateBlob";
 import { notifyApprovalRequested } from "./approvalNotify";
 import type { ApprovalStage, LineInput } from "./types";
 
@@ -186,12 +185,12 @@ export async function cancelApprovalAction(
 export async function deleteRequestAction(requestId: string): Promise<ActionResult> {
   const s = await requireSession();
   const r = await run(async () => {
-    const orphanBlobs = await deleteRequest(s.companyId, requestId, {
+    // 電帳法対応: 添付のメタ情報と実体は監査ログ側に残る（deleteRequest 内で書き写す）
+    await deleteRequest(s.companyId, requestId, {
       loginId: s.loginId,
       isAdmin: s.role === "admin",
+      name: s.userName,
     });
-    // 申請と一緒に消えた添付の実体も片付ける（失敗しても削除自体は成功扱い）
-    await Promise.all(orphanBlobs.map((u) => deletePrivateBlob(u)));
     revalidatePath("/requests");
     revalidatePath(`/requests/${requestId}`);
   });

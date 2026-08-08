@@ -304,6 +304,36 @@ async function buildSchema(): Promise<void> {
   // 既存レコードを壊さないよう data は NULL 許容へ緩める。
   await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS blob_url TEXT`);
   await safeDdl(() => sql`ALTER TABLE request_files ALTER COLUMN data DROP NOT NULL`);
+  // 電帳法対応: 添付は物理削除しない（論理削除）。誰がいつ・なぜ消したかを行に残す。
+  await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS deleted_by TEXT`);
+  await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS deleted_name TEXT`);
+  await safeDdl(() => sql`ALTER TABLE request_files ADD COLUMN IF NOT EXISTS delete_reason TEXT`);
+
+  // 電帳法対応: 添付の訂正・削除の履歴（監査ログ）。
+  // 申請ごと下書きを削除した場合も、添付のメタ情報と実体の所在（blob_url）を
+  // ここへ書き写してから消すため、証跡と実体は失われない。
+  await safeDdl(() => sql`
+    CREATE TABLE IF NOT EXISTS request_file_audit (
+      id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      company_id     UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      file_id        UUID NOT NULL,
+      request_id     UUID,
+      req_code       TEXT,
+      file_name      TEXT NOT NULL,
+      content_type   TEXT,
+      size_bytes     INTEGER,
+      blob_url       TEXT,
+      uploaded_by    TEXT,
+      uploaded_name  TEXT,
+      uploaded_at    TIMESTAMPTZ,
+      action         TEXT NOT NULL,
+      actor_login_id TEXT,
+      actor_name     TEXT,
+      reason         TEXT,
+      created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`);
+  await safeDdl(() => sql`CREATE INDEX IF NOT EXISTS request_file_audit_company_idx ON request_file_audit(company_id, created_at)`);
 
   // 承認ワークフローの設定（管理者が画面から変更する）。会社ごとに1行。
   // stages: 1=MGRのみ / 2=MGR→部門長。approvers が空配列なら全管理者が承認できる。

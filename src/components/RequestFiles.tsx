@@ -139,7 +139,7 @@ export default function RequestFiles({
       )}
       {editable && (
         <p className="mt-2 text-xs text-[#a0a0a0]">
-          PDF・画像・Excel など。1ファイル4MBまで。提出後は削除できません（承認後は単価履歴からも閲覧できます）。
+          PDF・画像・Excel など。1ファイル4MBまで。提出後は削除できません。削除しても記録と実体は残ります（電帳法対応。承認後は単価履歴からも閲覧できます）。
         </p>
       )}
     </section>
