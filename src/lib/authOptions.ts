@@ -47,6 +47,13 @@ export const authOptions: NextAuthOptions = {
           /* スキーマ初期化の一時失敗ではログイン自体は止めない */
         }
         const loginId = credentials.email.trim();
+        // ポータル一本化: 一般利用者のログインはポータルの一括ログイン（/api/sso）に集約した。
+        // パスワードでの直接ログインは、ポータル・SSO障害時の復旧用に統一管理者（admin）だけ許す。
+        if (loginId.toLowerCase() !== "admin") {
+          throw new Error(
+            "ログインはポータルから行ってください。ポータルでログインすると各アプリへ自動でログインされます。"
+          );
+        }
         let rows;
         try {
           rows = await sql`
