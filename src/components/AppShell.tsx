@@ -105,7 +105,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // 認証前ページ・帳票印刷ページはサイドバーなし
   const bare =
     pathname.startsWith("/login") ||
-    pathname.startsWith("/register") ||
     pathname.startsWith("/password-reset") ||
     /\/print$/.test(pathname);
   if (bare) return <>{children}</>;
