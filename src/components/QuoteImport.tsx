@@ -23,6 +23,8 @@ export interface QuoteItemDraft {
 
 export interface QuoteDraft {
   fileName: string;
+  /** 読み取った元ファイル。反映時に申請の添付として保存する（電帳法: 原本の保存） */
+  file: File;
   supplierCd: string | null;
   supplierName: string | null;
   effectiveDate: string | null;
@@ -64,7 +66,8 @@ export default function QuoteImport({
   onApply,
 }: {
   today: string;
-  onApply: (lines: QuoteAppliedLine[]) => void;
+  /** 反映する明細と、読み取りに使った見積書の原本（申請の添付として保存する） */
+  onApply: (lines: QuoteAppliedLine[], sourceFiles: File[]) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [drafts, setDrafts] = useState<QuoteDraft[]>([]);
@@ -119,6 +122,7 @@ export default function QuoteImport({
           };
           acc.push({
             fileName: file.name,
+            file,
             supplierCd: q.supplierCd,
             supplierName: q.supplierName,
             effectiveDate: q.effectiveDate,
@@ -159,7 +163,10 @@ export default function QuoteImport({
 
   function apply() {
     const lines: QuoteAppliedLine[] = [];
+    // 1明細でも反映した見積書は、原本を申請の添付として保存する（電帳法対応）
+    const sourceFiles: File[] = [];
     for (const d of drafts) {
+      if (d.items.some((it) => it.include)) sourceFiles.push(d.file);
       for (const it of d.items) {
         if (!it.include) continue;
         lines.push({
@@ -176,7 +183,7 @@ export default function QuoteImport({
         });
       }
     }
-    onApply(lines);
+    onApply(lines, sourceFiles);
     setDrafts([]);
     setParseErrors([]);
   }

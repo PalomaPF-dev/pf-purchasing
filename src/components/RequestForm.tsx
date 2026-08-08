@@ -339,7 +339,16 @@ export default function RequestForm({
   }
 
   /** 見積書AI取り込みのプレビュー結果を明細へ反映（QuoteImport から呼ばれる） */
-  function applyQuoteLines(applied: QuoteAppliedLine[]) {
+  function applyQuoteLines(applied: QuoteAppliedLine[], sourceFiles: File[] = []) {
+    // 読み取りに使った見積書の原本は、申請の添付として保存する（電帳法: 取引情報の保存）。
+    // 同じファイルを2回反映しても重複しないよう、名前とサイズで揃える
+    if (sourceFiles.length > 0) {
+      setAttachments((prev) => {
+        const seen = new Set(prev.map((f) => `${f.name}\u0000${f.size}`));
+        const add = sourceFiles.filter((f) => !seen.has(`${f.name}\u0000${f.size}`));
+        return add.length > 0 ? [...prev, ...add] : prev;
+      });
+    }
     if (applied.length === 0) return;
     const newLines: FormLine[] = applied.map((a) => ({
       ...emptyLine(a.startDate || today),
@@ -870,7 +879,7 @@ export default function RequestForm({
         <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-[#333333]">
           <Paperclip className="h-4 w-4 text-[#707070]" />
           添付資料
-          <span className="font-normal text-[#a0a0a0]">（見積書・仕様書など・任意）</span>
+          <span className="font-normal text-[#a0a0a0]">（見積書・仕様書など・任意。見積書AI取込で反映した原本は自動で追加されます）</span>
         </h2>
         {attachments.length > 0 && (
           <ul className="mb-2 divide-y divide-[#f5f5f5]">

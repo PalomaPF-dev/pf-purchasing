@@ -16,6 +16,7 @@ import {
   LogOut,
   Mail,
   BookOpen,
+  FileSearch,
 } from "lucide-react";
 import { AppShell as BaseAppShell, type NavGroup } from "@paloma-pf/ui";
 
@@ -42,6 +43,8 @@ const NAV: NavGroup[] = [
       { href: "/items", label: "品番マスタ", icon: Package, adminOnly: true },
       { href: "/locations", label: "納入場所マスタ", icon: MapPin, adminOnly: true },
       { href: "/employees", label: "ユーザー登録", icon: Users, adminOnly: true },
+      // 電帳法対応: 電子取引データ（見積書など）の横断検索・索引簿・一括ダウンロード
+      { href: "/attachments", label: "添付資料の検索", icon: FileSearch, adminOnly: true },
       // 運用開始時の1回限りの作業（日常運用では使わない）
       { href: "/migrate", label: "初期データ移行", icon: DatabaseZap, adminOnly: true },
     ],

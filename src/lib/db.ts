@@ -424,8 +424,8 @@ export async function updateDraftRequest(
 export async function deleteRequest(
   companyId: string,
   requestId: string,
-  actor: { loginId: string | null; isAdmin: boolean } = { loginId: null, isAdmin: true }
-): Promise<string[]> {
+  actor: { loginId: string | null; isAdmin: boolean; name?: string | null } = { loginId: null, isAdmin: true }
+): Promise<void> {
   await ensureSchema();
   const sql = getSql();
   const cur = (await sql`
@@ -439,12 +439,21 @@ export async function deleteRequest(
     );
   if (!actor.isAdmin && actor.loginId && r.applicant_login_id && r.applicant_login_id !== actor.loginId)
     throw new Error("この下書きを削除できるのは、作成した本人と管理者だけです。");
-  // CASCADE で消える前に、添付の実体の在り処を控えておく
-  const files = (await sql`
-    SELECT blob_url FROM request_files
-    WHERE company_id = ${companyId} AND request_id = ${requestId} AND blob_url IS NOT NULL`) as any[];
+  // 電帳法対応: 添付は行が CASCADE で消える前にメタ情報と実体の所在（blob_url）を
+  // 監査ログへ書き写す。Blob の実体は消さないので、受領した見積書は失われない。
+  await sql`
+    INSERT INTO request_file_audit (
+      company_id, file_id, request_id,
+      req_code, file_name, content_type, size_bytes, blob_url,
+      uploaded_by, uploaded_name, uploaded_at,
+      action, actor_login_id, actor_name, reason)
+    SELECT f.company_id, f.id, f.request_id,
+           ${r.req_code ?? null}, f.file_name, f.content_type, f.size_bytes, f.blob_url,
+           f.uploaded_by, f.uploaded_name, f.created_at,
+           'purge_with_request', ${actor.loginId}, ${actor.name ?? null}, '下書きの削除に伴う'
+    FROM request_files f
+    WHERE f.company_id = ${companyId} AND f.request_id = ${requestId}`;
   await sql`DELETE FROM price_requests WHERE company_id = ${companyId} AND id = ${requestId}`;
-  return files.map((f) => f.blob_url as string);
 }
 
 /** 申請を提出（draft/rejected → pending）。申請番号を採番する。 */
@@ -2606,6 +2615,10 @@ export interface RequestFile {
   kind: string;
   uploadedName: string | null;
   createdAt: string;
+  /** 論理削除の情報（電帳法対応: 物理削除はしない）。未削除なら null */
+  deletedAt: string | null;
+  deletedName: string | null;
+  deleteReason: string | null;
 }
 
 function mapFile(r: any): RequestFile {
@@ -2618,6 +2631,9 @@ function mapFile(r: any): RequestFile {
     kind: r.kind ?? "quote",
     uploadedName: r.uploaded_name ?? null,
     createdAt: tsStr(r.created_at),
+    deletedAt: r.deleted_at ? tsStr(r.deleted_at) : null,
+    deletedName: r.deleted_name ?? null,
+    deleteReason: r.delete_reason ?? null,
   };
 }
 
@@ -2631,7 +2647,7 @@ export async function listRequestFiles(
   const rows = await sql`
     SELECT id, request_id, file_name, content_type, size_bytes, kind, uploaded_name, created_at
     FROM request_files
-    WHERE company_id = ${companyId} AND request_id = ${requestId}
+    WHERE company_id = ${companyId} AND request_id = ${requestId} AND deleted_at IS NULL
     ORDER BY created_at`;
   return (rows as any[]).map(mapFile);
 }
@@ -2648,7 +2664,7 @@ export async function filesForHistoryRow(
            f.uploaded_name, f.created_at
     FROM request_files f
     JOIN price_request_lines l ON l.request_id = f.request_id
-    WHERE f.company_id = ${companyId} AND l.id = ${requestLineId}
+    WHERE f.company_id = ${companyId} AND l.id = ${requestLineId} AND f.deleted_at IS NULL
     ORDER BY f.created_at`;
   return (rows as any[]).map(mapFile);
 }
@@ -2668,7 +2684,7 @@ export async function filesForHistoryRows(
            f.kind, f.uploaded_name, f.created_at
     FROM request_files f
     JOIN price_request_lines l ON l.request_id = f.request_id
-    WHERE f.company_id = ${companyId} AND l.id = ANY(${ids}::uuid[])
+    WHERE f.company_id = ${companyId} AND l.id = ANY(${ids}::uuid[]) AND f.deleted_at IS NULL
     ORDER BY f.created_at`;
   for (const r of rows as any[]) {
     const arr = out.get(r.line_id) ?? [];
@@ -2676,6 +2692,179 @@ export async function filesForHistoryRows(
     out.set(r.line_id, arr);
   }
   return out;
+}
+
+/** 添付資料の横断検索の1行（電帳法の3要件: 取引先・取引年月日・取引金額で探せる） */
+export interface AttachmentSearchRow extends RequestFile {
+  uploadedBy: string | null;
+  reqCode: string | null;
+  requestTitle: string | null;
+  requestStatus: RequestStatus;
+  supplierSummary: string | null;
+  /** 申請明細の適用日の範囲（取引年月日に相当） */
+  minStartDate: string | null;
+  maxStartDate: string | null;
+}
+
+/**
+ * 添付資料の横断検索（管理者・電帳法対応）。
+ * 取引先（CD・名称）・取引年月日（明細の適用日）・取引金額（明細の新単価）で
+ * 絞り込める。includeDeleted で論理削除済みも含めて確認できる。
+ */
+export async function searchAttachments(
+  companyId: string,
+  opts: {
+    /** ファイル名・申請No・タイトル */
+    q?: string | null;
+    supplierQ?: string | null;
+    /** 明細の新単価がこの金額に一致する申請の添付 */
+    amount?: number | null;
+    /** 明細の適用日がこの範囲に入る申請の添付 */
+    from?: string | null;
+    to?: string | null;
+    includeDeleted?: boolean;
+    limit?: number;
+    offset?: number;
+  } = {}
+): Promise<{ rows: AttachmentSearchRow[]; total: number }> {
+  await ensureSchema();
+  const sql = getSql();
+  const limit = Math.min(opts.limit ?? 100, 1000);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const like = (v: string | null | undefined) => (v && v.trim() ? `%${v.trim()}%` : null);
+  const q = like(opts.q);
+  const supplierQ = like(opts.supplierQ);
+  const amount = opts.amount ?? null;
+  const from = opts.from?.trim() || null;
+  const to = opts.to?.trim() || null;
+
+  const conds = [
+    opts.includeDeleted ? null : sql`AND f.deleted_at IS NULL`,
+    q ? sql`AND (f.file_name ILIKE ${q} OR r.req_code ILIKE ${q} OR r.title ILIKE ${q})` : null,
+    supplierQ
+      ? sql`AND EXISTS (
+          SELECT 1 FROM price_request_lines l
+          WHERE l.request_id = f.request_id
+            AND (l.supplier_cd ILIKE ${supplierQ} OR l.supplier_name ILIKE ${supplierQ}))`
+      : null,
+    amount != null
+      ? sql`AND EXISTS (
+          SELECT 1 FROM price_request_lines l
+          WHERE l.request_id = f.request_id AND l.new_price = ${amount})`
+      : null,
+    from || to
+      ? sql`AND EXISTS (
+          SELECT 1 FROM price_request_lines l
+          WHERE l.request_id = f.request_id
+            AND (${from}::date IS NULL OR l.start_date >= ${from}::date)
+            AND (${to}::date IS NULL OR l.start_date <= ${to}::date))`
+      : null,
+  ].filter((c): c is NonNullable<typeof c> => c != null);
+  let cond = sql``;
+  for (const c of conds) cond = sql`${cond} ${c}`;
+  const where = sql`f.company_id = ${companyId} ${cond}`;
+
+  const [rows, cnt] = await Promise.all([
+    sql`
+      SELECT f.id, f.request_id, f.file_name, f.content_type, f.size_bytes, f.kind,
+             f.uploaded_by, f.uploaded_name, f.created_at,
+             f.deleted_at, f.deleted_name, f.delete_reason,
+             r.req_code, r.title, r.status,
+             (SELECT MIN(l.supplier_cd || ' ' || COALESCE(l.supplier_name, ''))
+                FROM price_request_lines l WHERE l.request_id = f.request_id) AS supplier_summary,
+             (SELECT MIN(l.start_date)::text
+                FROM price_request_lines l WHERE l.request_id = f.request_id) AS min_start,
+             (SELECT MAX(l.start_date)::text
+                FROM price_request_lines l WHERE l.request_id = f.request_id) AS max_start
+      FROM request_files f
+      JOIN price_requests r ON r.id = f.request_id
+      WHERE ${where}
+      ORDER BY f.created_at DESC, f.id
+      LIMIT ${limit} OFFSET ${offset}`,
+    sql`
+      SELECT COUNT(*)::int AS n
+      FROM request_files f
+      JOIN price_requests r ON r.id = f.request_id
+      WHERE ${where}`,
+  ]);
+  return {
+    rows: (rows as any[]).map((r) => ({
+      ...mapFile(r),
+      uploadedBy: r.uploaded_by ?? null,
+      reqCode: r.req_code ?? null,
+      requestTitle: r.title ?? null,
+      requestStatus: r.status as RequestStatus,
+      supplierSummary: r.supplier_summary ?? null,
+      minStartDate: r.min_start ?? null,
+      maxStartDate: r.max_start ?? null,
+    })),
+    total: Number((cnt as any)[0]?.n ?? 0),
+  };
+}
+
+/** 申請ごと削除された下書きの添付（監査ログ）。実体は保持しており、ここから辿れる */
+export interface PurgedFileRow {
+  id: string;
+  fileId: string;
+  reqCode: string | null;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  blobUrl: string | null;
+  uploadedName: string | null;
+  uploadedAt: string | null;
+  actorName: string | null;
+  reason: string | null;
+  createdAt: string;
+}
+
+export async function listPurgedFiles(
+  companyId: string,
+  opts: { limit?: number } = {}
+): Promise<PurgedFileRow[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT id, file_id, req_code, file_name, content_type, size_bytes, blob_url,
+           uploaded_name, uploaded_at, actor_name, reason, created_at
+    FROM request_file_audit
+    WHERE company_id = ${companyId} AND action = 'purge_with_request'
+    ORDER BY created_at DESC
+    LIMIT ${Math.min(opts.limit ?? 200, 1000)}`;
+  return (rows as any[]).map((r) => ({
+    id: r.id,
+    fileId: r.file_id,
+    reqCode: r.req_code ?? null,
+    fileName: r.file_name,
+    contentType: r.content_type ?? "application/octet-stream",
+    sizeBytes: Number(r.size_bytes ?? 0),
+    blobUrl: r.blob_url ?? null,
+    uploadedName: r.uploaded_name ?? null,
+    uploadedAt: r.uploaded_at ? tsStr(r.uploaded_at) : null,
+    actorName: r.actor_name ?? null,
+    reason: r.reason ?? null,
+    createdAt: tsStr(r.created_at),
+  }));
+}
+
+/** 監査ログの1件（申請ごと削除された添付）の実体の所在を返す。管理者のダウンロード用 */
+export async function getPurgedFile(
+  companyId: string,
+  auditId: string
+): Promise<{ fileName: string; contentType: string; blobUrl: string | null } | null> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = await sql`
+    SELECT file_name, content_type, blob_url FROM request_file_audit
+    WHERE company_id = ${companyId} AND id = ${auditId} AND action = 'purge_with_request'
+    LIMIT 1`;
+  const r = (rows as any[])[0];
+  if (!r) return null;
+  return {
+    fileName: r.file_name,
+    contentType: r.content_type ?? "application/octet-stream",
+    blobUrl: r.blob_url ?? null,
+  };
 }
 
 export interface HistoryReasonInput {
@@ -2894,16 +3083,35 @@ export async function getRequestFile(
 }
 
 /**
- * 添付を削除する。Blob 側の実体も消せるよう、削除した行の blob_url を返す。
- * （実体の削除は呼び出し元が行う。失敗しても DB の整合性は保たれる）
+ * 添付を削除する（電帳法対応: 論理削除）。
+ * 行も Blob の実体も残し、誰がいつ・なぜ消したかを行と監査ログに記録する。
+ * 一覧からは消えるが、添付資料の検索（管理者）で「削除済みを含む」と辿れる。
  */
 export async function deleteRequestFile(
   companyId: string,
-  fileId: string
-): Promise<{ blobUrl: string | null }> {
+  fileId: string,
+  actor: { loginId: string | null; name: string | null },
+  reason: string | null
+): Promise<void> {
   const sql = getSql();
   const rows = await sql`
-    DELETE FROM request_files WHERE company_id = ${companyId} AND id = ${fileId}
-    RETURNING blob_url`;
-  return { blobUrl: (rows as any[])[0]?.blob_url ?? null };
+    UPDATE request_files
+    SET deleted_at = NOW(), deleted_by = ${actor.loginId}, deleted_name = ${actor.name},
+        delete_reason = ${reason}
+    WHERE company_id = ${companyId} AND id = ${fileId} AND deleted_at IS NULL
+    RETURNING request_id, file_name, content_type, size_bytes, blob_url,
+              uploaded_by, uploaded_name, created_at`;
+  const r = (rows as any[])[0];
+  if (!r) throw new Error("添付が見つかりません（既に削除済みの可能性があります）。");
+  await sql`
+    INSERT INTO request_file_audit (
+      company_id, file_id, request_id,
+      req_code, file_name, content_type, size_bytes, blob_url,
+      uploaded_by, uploaded_name, uploaded_at,
+      action, actor_login_id, actor_name, reason)
+    SELECT ${companyId}, ${fileId}, ${r.request_id},
+           (SELECT req_code FROM price_requests WHERE id = ${r.request_id}),
+           ${r.file_name}, ${r.content_type}, ${r.size_bytes}, ${r.blob_url},
+           ${r.uploaded_by}, ${r.uploaded_name}, ${r.created_at},
+           'delete', ${actor.loginId}, ${actor.name}, ${reason}`;
 }
