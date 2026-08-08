@@ -8,11 +8,9 @@ import {
   Paperclip,
   Plus,
   Search,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import { createRequestAction, updateRequestAction } from "@/lib/actions";
-import QuoteImport, { type QuoteAppliedLine } from "@/components/QuoteImport";
 import BulkLinesImport from "@/components/BulkLinesImport";
 import SupplierPicker, { type PickedSupplier } from "@/components/SupplierPicker";
 import ItemPicker, { type PickedItem } from "@/components/ItemPicker";
@@ -182,7 +180,7 @@ function diffOf(l: FormLine): number | null {
 }
 
 /** 入力方法のタブ */
-type Tab = "manual" | "quote" | "bulk";
+type Tab = "manual" | "bulk";
 
 /** 明細が「空の1行だけ」か（取り込み結果で置き換えてよいか）の判定 */
 function isBlank(lines: FormLine[]): boolean {
@@ -226,7 +224,6 @@ function bdSum(l: FormLine): number | null {
 
 /**
  * 単価申請フォーム（新規・下書き編集共通）。
- * - 見積書（Excel/PDF/画像）のAI読み取り→プレビュー確認→明細へ反映
  * - 品番・取引先マスタのインクリメンタル検索
  * - 現行単価の自動取得（単価履歴から）
  */
@@ -252,7 +249,7 @@ export default function RequestForm({
   const [saving, setSaving] = useState<"none" | "draft" | "submit">("none");
   /** 保存時にまとめてアップロードする添付資料 */
   const [attachments, setAttachments] = useState<File[]>([]);
-  // 入力方法のタブ（手入力／見積書から取り込み／Excel・CSVで一括入力）
+  // 入力方法のタブ（手入力／Excel・CSVで一括入力）
   const [tab, setTab] = useState<Tab>("manual");
   // 取引先（申請の対象）。編集時は既存明細から復元する
   const [supplier, setSupplier] = useState<PickedSupplier | null>(() => {
@@ -336,35 +333,6 @@ export default function RequestForm({
     } else {
       setError(`明細${i + 1}: 単価履歴に現行単価が見つかりませんでした（新規品目の場合はそのまま申請できます）。`);
     }
-  }
-
-  /** 見積書AI取り込みのプレビュー結果を明細へ反映（QuoteImport から呼ばれる） */
-  function applyQuoteLines(applied: QuoteAppliedLine[], sourceFiles: File[] = []) {
-    // 読み取りに使った見積書の原本は、申請の添付として保存する（電帳法: 取引情報の保存）。
-    // 同じファイルを2回反映しても重複しないよう、名前とサイズで揃える
-    if (sourceFiles.length > 0) {
-      setAttachments((prev) => {
-        const seen = new Set(prev.map((f) => `${f.name}\u0000${f.size}`));
-        const add = sourceFiles.filter((f) => !seen.has(`${f.name}\u0000${f.size}`));
-        return add.length > 0 ? [...prev, ...add] : prev;
-      });
-    }
-    if (applied.length === 0) return;
-    const newLines: FormLine[] = applied.map((a) => ({
-      ...emptyLine(a.startDate || today),
-      itemCd: a.itemCd,
-      itemName: a.itemName,
-      supplierCd: a.supplierCd,
-      supplierName: a.supplierName,
-      unitCd: a.unitCd,
-      lotQty: a.lotQty,
-      currency: a.currency || "JPY",
-      newPrice: a.newPrice,
-      reasonNote: a.reasonNote,
-    }));
-    // 既存が空1行だけなら置き換え、そうでなければ追記
-    setLines((prev) => (isBlank(prev) ? newLines : [...prev, ...newLines]));
-    setTab("manual");
   }
 
   async function save(submit: boolean) {
@@ -488,7 +456,6 @@ export default function RequestForm({
 
   const TABS: { key: Tab; label: string; icon: typeof Keyboard }[] = [
     { key: "manual", label: "手入力", icon: Keyboard },
-    { key: "quote", label: "見積書から取り込み", icon: Sparkles },
     { key: "bulk", label: "Excel/CSVで一括入力", icon: FileSpreadsheet },
   ];
 
@@ -555,7 +522,6 @@ export default function RequestForm({
             })}
           </div>
 
-          {tab === "quote" && <QuoteImport today={today} onApply={applyQuoteLines} />}
           {tab === "bulk" && <BulkLinesImport onApply={applyBulkLines} />}
 
           {/* 明細（表形式） */}
@@ -879,7 +845,7 @@ export default function RequestForm({
         <h2 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-[#333333]">
           <Paperclip className="h-4 w-4 text-[#707070]" />
           添付資料
-          <span className="font-normal text-[#a0a0a0]">（見積書・仕様書など・任意。見積書AI取込で反映した原本は自動で追加されます）</span>
+          <span className="font-normal text-[#a0a0a0]">（見積書・仕様書など・任意）</span>
         </h2>
         {attachments.length > 0 && (
           <ul className="mb-2 divide-y divide-[#f5f5f5]">
